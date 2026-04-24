@@ -4,10 +4,11 @@
 .streamlit/secrets.toml
 
 # Database files
-*.db
-*.sqlite
-*.sqlite3
-trust_labs.db
+# Use Git LFS for production database (trust_labs.db)
+# Exclude other local databases
+local_*.db
+test_*.db
+temp_*.db
 
 # Python
 __pycache__/
