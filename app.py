@@ -13,6 +13,17 @@ from datetime import datetime, timedelta
 import io
 import numpy as np
 from sklearn.linear_model import LinearRegression
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+
+# ── Phase 4: Enterprise imports ──
+import config
+from auth import (
+    init_auth_state, require_auth, render_login_form,
+    render_logout_button, is_admin, AUTH_ENABLED
+)
+from alerts import render_alert_banner, render_alert_table, get_alert_summary
+from reports import build_report_excel, build_custom_report, format_report_filename
 
 st.set_page_config(
     page_title="Trust Labs Analytics",
@@ -20,6 +31,19 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# ============================================================
+# AUTHENTICATION GATE
+# ============================================================
+
+init_auth_state()
+
+if AUTH_ENABLED and not st.session_state.get("authenticated", False):
+    render_login_form()
+    st.stop()
+
+# User is authenticated — show logout in sidebar later
+
 
 # ============================================================
 # FULL MATERIAL DESIGN 3 CSS
@@ -404,31 +428,31 @@ def load_revenue_by_test():
 # ============================================================
 
 def search_patient_by_id(pid):
-    q = f"SELECT * FROM patients WHERE LOWER(Patient_ID)=LOWER('{pid}')"
-    r = pd.read_sql(q, conn)
+    q = "SELECT * FROM patients WHERE LOWER(Patient_ID)=LOWER(?)"
+    r = pd.read_sql(q, conn, params=(pid,))
     return r if not r.empty else None
 
 def search_doctor_by_id(did):
     try:
-        q = f"SELECT * FROM doctors WHERE LOWER(Doctor_ID)=LOWER('{did}')"
-        r = pd.read_sql(q, conn)
+        q = "SELECT * FROM doctors WHERE LOWER(Doctor_ID)=LOWER(?)"
+        r = pd.read_sql(q, conn, params=(did,))
         return r if not r.empty else None
     except Exception:
         return None
 
 def search_corporate_by_id(cid):
     try:
-        q = f"SELECT * FROM corporates WHERE LOWER(Corporate_ID)=LOWER('{cid}')"
-        r = pd.read_sql(q, conn)
+        q = "SELECT * FROM corporates WHERE LOWER(Corporate_ID)=LOWER(?)"
+        r = pd.read_sql(q, conn, params=(cid,))
         return r if not r.empty else None
     except Exception:
         return None
 
 def get_patient_visits(pid):
-    q = f"""SELECT Visit_Date, Branch_Name, Visit_Time, Visit_Day
-            FROM visits WHERE LOWER(Patient_ID)=LOWER('{pid}')
+    q = """SELECT Visit_Date, Branch_Name, Visit_Time, Visit_Day
+            FROM visits WHERE LOWER(Patient_ID)=LOWER(?)
             ORDER BY Visit_Date DESC"""
-    df = pd.read_sql(q, conn)
+    df = pd.read_sql(q, conn, params=(pid,))
     df["Visit_Date"] = pd.to_datetime(df["Visit_Date"], errors="coerce")
     return df
 
@@ -503,6 +527,122 @@ def build_real_revenue_from_visits(visits_df, annual_inflation=0.33):
     monthly["month_label"]   = monthly["visit_month"].dt.strftime("%b %Y")
     return monthly
 
+
+def compute_monthly_metrics(visits_df):
+    """Compute monthly visit and patient metrics from visits data for trend analysis."""
+    if visits_df.empty or "Visit_Month" not in visits_df.columns:
+        return pd.DataFrame()
+    monthly = visits_df.groupby("Visit_Month").agg({
+        "Patient_ID": "nunique",
+        "Visit_Date": "count"
+    }).reset_index()
+    monthly.columns = ["visit_month", "unique_patients", "total_visits"]
+    monthly = monthly.sort_values("visit_month").reset_index(drop=True)
+    monthly["avg_visits_per_patient"] = monthly["total_visits"] / monthly["unique_patients"].clip(lower=1)
+    return monthly
+
+
+def get_trend_indicator(monthly_df, metric_col, mode="pct"):
+    """
+    Compute trend indicator from monthly data.
+    mode: 'pct' for percentage change, 'abs' for absolute change.
+    Returns: (trend_string, direction)
+    """
+    if monthly_df is None or monthly_df.empty or len(monthly_df) < 2 or metric_col not in monthly_df.columns:
+        return "—", "neutral"
+    latest = monthly_df[metric_col].iloc[-1]
+    prev = monthly_df[metric_col].iloc[-2]
+    if pd.isna(latest) or pd.isna(prev) or prev == 0:
+        return "—", "neutral"
+    if mode == "pct":
+        change = (latest / prev - 1) * 100
+        if abs(change) < 0.05:
+            return "—", "neutral"
+        direction = "up" if change > 0 else "down"
+        return f"{change:+.1f}%", direction
+    elif mode == "abs":
+        change = latest - prev
+        if abs(change) < 0.01:
+            return "—", "neutral"
+        direction = "up" if change > 0 else "down"
+        return f"{change:+.1f}", direction
+    return "—", "neutral"
+
+
+def perform_patient_segmentation(patients_df, n_clusters=5):
+    """
+    Perform KMeans clustering on patients for segmentation analysis.
+    Returns: (patients_df_with_clusters, cluster_summary, cluster_names)
+    """
+    feature_cols = ["total_visits", "loyalty_points", "churn_risk_score", 
+                    "days_since_last_visit"]
+    available_cols = [c for c in feature_cols if c in patients_df.columns]
+    
+    if len(available_cols) < 3:
+        return patients_df, pd.DataFrame(), {}
+    
+    df = patients_df.copy()
+    for col in available_cols:
+        df[col] = df[col].fillna(df[col].median())
+    
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(df[available_cols])
+    
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+    df["cluster"] = kmeans.fit_predict(X_scaled)
+    
+    summary = df.groupby("cluster")[available_cols].mean().round(1)
+    summary["count"] = df.groupby("cluster").size()
+    summary = summary.reset_index()
+    
+    names = {}
+    for _, row in summary.iterrows():
+        cid = int(row["cluster"])
+        visits = row.get("total_visits", 0)
+        risk = row.get("churn_risk_score", 50)
+        loyalty = row.get("loyalty_points", 0)
+        
+        if visits > summary["total_visits"].median() and risk < summary["churn_risk_score"].median():
+            names[cid] = "Champions"
+        elif visits > summary["total_visits"].median() and risk >= summary["churn_risk_score"].median():
+            names[cid] = "At-Risk Loyal"
+        elif visits <= summary["total_visits"].median() and risk < summary["churn_risk_score"].median():
+            names[cid] = "New Potentials"
+        elif loyalty > summary["loyalty_points"].median():
+            names[cid] = "Dormant VIPs"
+        else:
+            names[cid] = "Need Attention"
+    
+    return df, summary, names
+
+
+def compute_data_quality(df, table_name="Table"):
+    """Compute data quality metrics for a DataFrame."""
+    if df.empty:
+        return {
+            "table": table_name,
+            "total_rows": 0,
+            "total_cols": 0,
+            "missing_pct": 0,
+            "duplicate_rows": 0,
+            "completeness_score": 0
+        }
+    
+    total_cells = df.size
+    missing_cells = df.isna().sum().sum()
+    missing_pct = (missing_cells / total_cells) * 100 if total_cells > 0 else 0
+    duplicate_rows = df.duplicated().sum()
+    completeness = 100 - missing_pct
+    
+    return {
+        "table": table_name,
+        "total_rows": len(df),
+        "total_cols": len(df.columns),
+        "missing_pct": round(missing_pct, 1),
+        "duplicate_rows": duplicate_rows,
+        "completeness_score": round(completeness, 1)
+    }
+
 def build_real_revenue(mr_df, annual_inflation=0.33):
     if mr_df.empty or len(mr_df) < 2:
         return pd.DataFrame()
@@ -561,7 +701,7 @@ with st.sidebar:
 
     page = st.radio("nav",
         ["🏠  Home","🔍  Patient Search","👨‍⚕️  Doctor Search",
-         "🏢  Corporate Search","📊  Analytics","📥  Export"],
+         "🏢  Corporate Search","📊  Analytics","📥  Export","📋 Reports"],
         label_visibility="collapsed")
 
     st.markdown('<hr style="margin:12px 0;border:none;border-top:1px solid #dadce0">',
@@ -579,6 +719,12 @@ letter-spacing:.8px;color:#5f6368;margin-bottom:10px;font-family:'Google Sans',s
         kpi_card("At Risk",f"{high_risk_count}","","down","⚠️","#ea4335")
     ],2), unsafe_allow_html=True)
 
+    st.markdown('<hr style="margin:12px 0;border:none;border-top:1px solid #dadce0">',
+                unsafe_allow_html=True)
+    
+    # Phase 4: Logout button
+    render_logout_button()
+    
     st.markdown('<hr style="margin:12px 0;border:none;border-top:1px solid #dadce0">',
                 unsafe_allow_html=True)
     st.markdown(f"""<div style="text-align:center;font-size:0.7rem;color:#9aa0a6">
@@ -599,13 +745,27 @@ if page == "🏠  Home":
     avg_loyalty = patients_data["loyalty_points"].mean() if len(patients_data) > 0 else 0
     high_risk_pct = high_risk_count / len(patients_data) * 100 if len(patients_data) > 0 else 0
 
+    # Compute real trends from monthly data
+    monthly_metrics = compute_monthly_metrics(visits_data)
+    patients_trend, patients_dir = get_trend_indicator(monthly_metrics, "unique_patients", "pct")
+    visits_trend, visits_dir = get_trend_indicator(monthly_metrics, "total_visits", "pct")
+    avg_trend, avg_dir = get_trend_indicator(monthly_metrics, "avg_visits_per_patient", "abs")
+    risk_trend, risk_dir = "—", "neutral"
+    loyalty_trend, loyalty_dir = "—", "neutral"
+
+    # Phase 4: High-risk patient alerts
+    render_alert_banner(patients_data)
+    
     st.markdown(kpi_row([
-        kpi_card("Total Patients", f"{len(patients_data):,}", "+5.2%", "up", "👥", "#1a73e8"),
-        kpi_card("Total Visits", f"{len(visits_data):,}", "+8.1%", "up", "📊", "#34a853"),
-        kpi_card("Avg Visits/Patient", f"{avg_visits:.1f}", "+0.3", "up", "📈", "#fbbc04"),
-        kpi_card("High Risk %", f"{high_risk_pct:.1f}%", "-2.1%", "down", "⚠️", "#ea4335"),
-        kpi_card("Avg Loyalty", f"{avg_loyalty:.0f}", "+3.5", "up", "🏆", "#9334e6")
+        kpi_card("Total Patients", f"{len(patients_data):,}", patients_trend, patients_dir, "👥", "#1a73e8"),
+        kpi_card("Total Visits", f"{len(visits_data):,}", visits_trend, visits_dir, "📊", "#34a853"),
+        kpi_card("Avg Visits/Patient", f"{avg_visits:.1f}", avg_trend, avg_dir, "📈", "#fbbc04"),
+        kpi_card("High Risk %", f"{high_risk_pct:.1f}%", risk_trend, risk_dir, "⚠️", "#ea4335"),
+        kpi_card("Avg Loyalty", f"{avg_loyalty:.0f}", loyalty_trend, loyalty_dir, "🏆", "#9334e6")
     ], 5), unsafe_allow_html=True)
+    
+    # Phase 4: Alert details expander
+    render_alert_table(patients_data)
 
     c1, c2 = st.columns(2)
     with c1:
@@ -633,14 +793,24 @@ if page == "🏠  Home":
 
     sec_title("📈 Monthly Visit Trends")
     chart_start()
-    if len(monthly_trends) > 0:
+    if len(monthly_metrics) > 0:
         fig = go.Figure()
         fig.add_trace(go.Scatter(
-            x=monthly_trends["visit_month"], y=monthly_trends["total_visits"],
+            x=monthly_metrics["visit_month"], y=monthly_metrics["total_visits"],
             mode="lines+markers", name="Total Visits",
             line=dict(color="#1a73e8", width=3), marker=dict(size=10)
         ))
+        fig.add_trace(go.Scatter(
+            x=monthly_metrics["visit_month"], y=monthly_metrics["unique_patients"],
+            mode="lines+markers", name="Unique Patients",
+            line=dict(color="#34a853", width=2, dash="dash"), marker=dict(size=8)
+        ))
         google_theme(fig, height=320)
+        fig.update_layout(
+            xaxis=dict(tickformat="%b %Y", dtick="M1"),
+            yaxis_title="Count",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     else:
         st.info("No monthly trend data available")
@@ -882,8 +1052,8 @@ elif page == "📊  Analytics":
 <p>Patients • Revenue • Inflation-adjusted CAGR • 3-month forecast</p>
 </div>""", unsafe_allow_html=True)
 
-    tab1, tab2, tab3, tab4 = st.tabs(
-        ["📊 Overview", "⚠️ Churn", "💰 Revenue & Inflation (CAGR)", "🔮 Predictive Trends"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+        ["📊 Overview", "⚠️ Churn", "💰 Revenue & Inflation (CAGR)", "🔮 Predictive Trends", "🏥 Clinical Insights", "🔍 Data Quality"])
 
     # ── TAB 1: OVERVIEW ──
     with tab1:
@@ -940,6 +1110,36 @@ elif page == "📊  Analytics":
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         else:
             st.info("Age group data not available")
+        chart_end()
+
+        # ── MoM Growth Analysis ──
+        sec_title("📊 Month-over-Month Growth",
+                  "Track visit and patient growth rates month-over-month")
+        chart_start()
+        if len(monthly_metrics) > 1:
+            mom = monthly_metrics.copy()
+            mom["visit_growth"] = mom["total_visits"].pct_change() * 100
+            mom["patient_growth"] = mom["unique_patients"].pct_change() * 100
+            
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=mom["visit_month"].iloc[1:], y=mom["visit_growth"].iloc[1:],
+                name="Visit Growth %", marker_color="#1a73e8"
+            ))
+            fig.add_trace(go.Bar(
+                x=mom["visit_month"].iloc[1:], y=mom["patient_growth"].iloc[1:],
+                name="Patient Growth %", marker_color="#34a853"
+            ))
+            google_theme(fig, height=300)
+            fig.update_layout(
+                barmode="group",
+                xaxis=dict(tickformat="%b %Y", dtick="M1"),
+                yaxis_title="Growth %",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02)
+            )
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.info("Need at least 2 months of data for MoM analysis")
         chart_end()
 
     # ── TAB 2: CHURN ──
@@ -1036,6 +1236,42 @@ elif page == "📊  Analytics":
             st.info("No high-risk patients found")
         info_card_end()
 
+        # ── ML Patient Segmentation ──
+        sec_title("🧬 ML Patient Segments",
+                  "KMeans clustering identifies 5 distinct patient segments")
+        chart_start()
+        if len(patients_data) > 50:
+            seg_df, seg_summary, seg_names = perform_patient_segmentation(patients_data)
+            
+            # Update summary with names
+            seg_summary["segment_name"] = seg_summary["cluster"].map(seg_names)
+            seg_summary = seg_summary.sort_values("count", ascending=False)
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                # Cluster size donut
+                fig = google_donut(
+                    seg_summary["count"].values,
+                    seg_summary["segment_name"].values,
+                    ["#1a73e8", "#34a853", "#fbbc04", "#ea4335", "#9334e6"]
+                )
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            
+            with c2:
+                # Segment characteristics
+                display_summary = seg_summary[["segment_name", "count", "total_visits", "loyalty_points", "churn_risk_score"]].copy()
+                display_summary.columns = ["Segment", "Count", "Avg Visits", "Avg Loyalty", "Avg Risk"]
+                st.dataframe(display_summary, hide_index=True, use_container_width=True)
+            
+            # Cross-tab: Segment vs Tier
+            if "patient_tier" in seg_df.columns:
+                crosstab = pd.crosstab(seg_df["cluster"].map(seg_names), seg_df["patient_tier"])
+                st.markdown("**Segment vs Tier Cross-Tabulation**")
+                st.dataframe(crosstab, use_container_width=True)
+        else:
+            st.info("Need more patients for segmentation analysis")
+        chart_end()
+
     # ── TAB 3: REVENUE + INFLATION + CAGR ──
     with tab3:
         INFL = 0.33
@@ -1072,9 +1308,11 @@ elif page == "📊  Analytics":
 
     # ── TAB 4: PREDICTIVE TRENDS ──
     with tab4:
-        if len(monthly_trends) > 1:
-            predictions, std_err = predict_visits(monthly_trends, months_ahead=3)
-            historical = monthly_trends[["visit_month","total_visits"]].copy()
+        # Use computed monthly metrics since monthly_trends table is empty
+        forecast_metrics = monthly_metrics if len(monthly_metrics) > 1 else monthly_trends
+        if len(forecast_metrics) > 1:
+            predictions, std_err = predict_visits(forecast_metrics, months_ahead=3)
+            historical = forecast_metrics[["visit_month","total_visits"]].copy()
 
             sec_title("🔮 3-Month Visit Forecast",
                       "Historical visits vs AI-predicted future visits (linear trend + confidence band)")
@@ -1140,6 +1378,195 @@ elif page == "📊  Analytics":
         else:
             st.warning("Need at least 2 months of historical data for forecasting")
 
+    # ── TAB 5: CLINICAL INSIGHTS ──
+    with tab5:
+        st.markdown(kpi_row([
+            kpi_card("Diabetic Patients", 
+                    f"{patients_data['Has_Diabetes'].sum() if 'Has_Diabetes' in patients_data.columns else 0:,}",
+                    f"{(patients_data['Has_Diabetes'].sum()/len(patients_data)*100) if 'Has_Diabetes' in patients_data.columns and len(patients_data)>0 else 0:.1f}%",
+                    "neutral", "🩺", "#ea4335"),
+            kpi_card("Hypertensive Patients",
+                    f"{patients_data['Has_Hypertension'].sum() if 'Has_Hypertension' in patients_data.columns else 0:,}",
+                    f"{(patients_data['Has_Hypertension'].sum()/len(patients_data)*100) if 'Has_Hypertension' in patients_data.columns and len(patients_data)>0 else 0:.1f}%",
+                    "neutral", "❤️", "#fbbc04"),
+            kpi_card("Dual Conditions",
+                    f"{len(patients_data[(patients_data['Has_Diabetes']==1) & (patients_data['Has_Hypertension']==1)]) if 'Has_Diabetes' in patients_data.columns and 'Has_Hypertension' in patients_data.columns else 0:,}",
+                    "comorbidity", "down", "⚠️", "#9334e6"),
+            kpi_card("High-Risk with Chronic",
+                    f"{len(patients_data[(patients_data['churn_risk_category']=='High Risk') & ((patients_data['Has_Diabetes']==1) | (patients_data['Has_Hypertension']==1))]) if all(c in patients_data.columns for c in ['churn_risk_category','Has_Diabetes','Has_Hypertension']) else 0:,}",
+                    "priority", "down", "🚨", "#ea4335")
+        ], 4), unsafe_allow_html=True)
+
+        c1, c2 = st.columns(2)
+        with c1:
+            sec_title("🩺 Diabetes Prevalence by Age Group")
+            chart_start()
+            if "Has_Diabetes" in patients_data.columns and "Age_Group" in patients_data.columns:
+                diabetes_by_age = patients_data.groupby("Age_Group")["Has_Diabetes"].agg(["sum", "count"]).reset_index()
+                diabetes_by_age["prevalence_pct"] = diabetes_by_age["sum"] / diabetes_by_age["count"] * 100
+                fig = px.bar(diabetes_by_age, x="Age_Group", y="prevalence_pct",
+                            color="prevalence_pct", color_continuous_scale="Reds",
+                            text=diabetes_by_age["prevalence_pct"].round(1))
+                fig.update_traces(textposition="outside", texttemplate="%{text:.1f}%")
+                google_theme(fig, height=300)
+                fig.update_layout(showlegend=False, xaxis_title="Age Group", yaxis_title="Prevalence %")
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            else:
+                st.info("Clinical data not available")
+            chart_end()
+
+        with c2:
+            sec_title("❤️ Hypertension Prevalence by Age Group")
+            chart_start()
+            if "Has_Hypertension" in patients_data.columns and "Age_Group" in patients_data.columns:
+                ht_by_age = patients_data.groupby("Age_Group")["Has_Hypertension"].agg(["sum", "count"]).reset_index()
+                ht_by_age["prevalence_pct"] = ht_by_age["sum"] / ht_by_age["count"] * 100
+                fig = px.bar(ht_by_age, x="Age_Group", y="prevalence_pct",
+                            color="prevalence_pct", color_continuous_scale="Oranges",
+                            text=ht_by_age["prevalence_pct"].round(1))
+                fig.update_traces(textposition="outside", texttemplate="%{text:.1f}%")
+                google_theme(fig, height=300)
+                fig.update_layout(showlegend=False, xaxis_title="Age Group", yaxis_title="Prevalence %")
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            else:
+                st.info("Clinical data not available")
+            chart_end()
+
+        sec_title("🔥 Comorbidity Heatmap",
+                  "Patients with both Diabetes and Hypertension by Age Group and Gender")
+        chart_start()
+        if all(c in patients_data.columns for c in ["Has_Diabetes", "Has_Hypertension", "Age_Group", "Gender"]):
+            patients_data["comorbidity"] = ((patients_data["Has_Diabetes"] == 1) & (patients_data["Has_Hypertension"] == 1)).astype(int)
+            heatmap_data = patients_data.groupby(["Age_Group", "Gender"])["comorbidity"].sum().reset_index()
+            heatmap_pivot = heatmap_data.pivot(index="Age_Group", columns="Gender", values="comorbidity").fillna(0)
+            
+            fig = px.imshow(heatmap_pivot, 
+                          color_continuous_scale="Reds",
+                          aspect="auto")
+            google_theme(fig, height=300)
+            fig.update_layout(xaxis_title="Gender", yaxis_title="Age Group")
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.info("Need clinical and demographic data for comorbidity analysis")
+        chart_end()
+
+        sec_title("⚕️ Clinical Risk Factor Analysis",
+                  "Average churn risk score by chronic condition status")
+        chart_start()
+        if "churn_risk_score" in patients_data.columns and "Has_Diabetes" in patients_data.columns:
+            clinical_risk = []
+            mask_diabetic = patients_data["Has_Diabetes"] == 1
+            mask_hypertensive = patients_data["Has_Hypertension"] == 1 if "Has_Hypertension" in patients_data.columns else pd.Series(False, index=patients_data.index)
+            
+            clinical_risk.append({
+                "Group": "Diabetic",
+                "Avg Risk": patients_data.loc[mask_diabetic, "churn_risk_score"].mean(),
+                "Count": mask_diabetic.sum()
+            })
+            clinical_risk.append({
+                "Group": "Non-Diabetic",
+                "Avg Risk": patients_data.loc[~mask_diabetic, "churn_risk_score"].mean(),
+                "Count": (~mask_diabetic).sum()
+            })
+            if "Has_Hypertension" in patients_data.columns:
+                clinical_risk.append({
+                    "Group": "Hypertensive",
+                    "Avg Risk": patients_data.loc[mask_hypertensive, "churn_risk_score"].mean(),
+                    "Count": mask_hypertensive.sum()
+                })
+                clinical_risk.append({
+                    "Group": "Non-Hypertensive",
+                    "Avg Risk": patients_data.loc[~mask_hypertensive, "churn_risk_score"].mean(),
+                    "Count": (~mask_hypertensive).sum()
+                })
+            
+            risk_df = pd.DataFrame(clinical_risk)
+            risk_df = risk_df.dropna()
+            if not risk_df.empty:
+                fig = px.bar(risk_df, x="Group", y="Avg Risk", color="Avg Risk",
+                            color_continuous_scale="RdYlGn_r", text=risk_df["Avg Risk"].round(1))
+                fig.update_traces(textposition="outside")
+                google_theme(fig, height=300)
+                fig.update_layout(showlegend=False, xaxis_title=None, yaxis_title="Avg Churn Risk")
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                st.dataframe(risk_df.round(1), hide_index=True, use_container_width=True)
+        else:
+            st.info("Need churn risk and clinical data for analysis")
+        chart_end()
+
+    # ── TAB 6: DATA QUALITY ──
+    with tab6:
+        sec_title("🔍 Data Quality Dashboard",
+                  "Monitor data completeness, freshness, and integrity across all tables")
+        
+        # Compute quality for all tables
+        quality_metrics = []
+        for df, name in [(patients_data, "Patients"), (visits_data, "Visits"), 
+                         (doctors_data, "Doctors"), (corporates_data, "Corporates"),
+                         (branches_data, "Branches")]:
+            quality_metrics.append(compute_data_quality(df, name))
+        
+        quality_df = pd.DataFrame(quality_metrics)
+        
+        st.markdown(kpi_row([
+            kpi_card("Overall Score", 
+                    f"{quality_df['completeness_score'].mean():.1f}%",
+                    "avg completeness", "up" if quality_df['completeness_score'].mean() > 90 else "neutral",
+                    "📊", "#1a73e8"),
+            kpi_card("Total Records",
+                    f"{quality_df['total_rows'].sum():,}",
+                    "across all tables", "neutral", "🗄️", "#34a853"),
+            kpi_card("Missing Cells",
+                    f"{quality_df['missing_pct'].mean():.1f}%",
+                    "avg missing rate", "down" if quality_df['missing_pct'].mean() > 5 else "up",
+                    "⚠️", "#ea4335" if quality_df['missing_pct'].mean() > 5 else "#34a853"),
+            kpi_card("Duplicates",
+                    f"{quality_df['duplicate_rows'].sum():,}",
+                    "total duplicates", "neutral", "🔁", "#fbbc04")
+        ], 4), unsafe_allow_html=True)
+
+        chart_start()
+        fig = px.bar(quality_df, x="table", y="completeness_score",
+                    color="completeness_score", color_continuous_scale="RdYlGn",
+                    text=quality_df["completeness_score"].round(1))
+        fig.update_traces(textposition="outside", texttemplate="%{text:.1f}%")
+        fig.add_hline(y=90, line_dash="dash", line_color="#ea4335",
+                     annotation_text="Target: 90%")
+        google_theme(fig, height=300)
+        fig.update_layout(showlegend=False, xaxis_title=None, yaxis_title="Completeness %")
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        chart_end()
+
+        info_card_start("Detailed Quality Report")
+        display_quality = quality_df.copy()
+        display_quality.columns = ["Table", "Rows", "Columns", "Missing %", "Duplicates", "Score"]
+        st.dataframe(display_quality, hide_index=True, use_container_width=True)
+        info_card_end()
+
+        # Per-table missing value analysis
+        st.markdown("#### Missing Values by Column")
+        selected_table = st.selectbox("Select table", ["Patients", "Visits", "Doctors", "Corporates", "Branches"])
+        table_map = {
+            "Patients": patients_data, "Visits": visits_data,
+            "Doctors": doctors_data, "Corporates": corporates_data,
+            "Branches": branches_data
+        }
+        selected_df = table_map.get(selected_table, pd.DataFrame())
+        if not selected_df.empty:
+            missing_by_col = selected_df.isna().sum()
+            missing_pct = (missing_by_col / len(selected_df) * 100).round(1)
+            missing_report = pd.DataFrame({
+                "Column": missing_by_col.index,
+                "Missing Count": missing_by_col.values,
+                "Missing %": missing_pct.values
+            })
+            missing_report = missing_report[missing_report["Missing Count"] > 0]
+            if not missing_report.empty:
+                st.dataframe(missing_report.sort_values("Missing %", ascending=False), 
+                           hide_index=True, use_container_width=True)
+            else:
+                st.success("✅ No missing values in this table!")
+
 # ============================================================
 # PAGE: EXPORT
 # ============================================================
@@ -1187,6 +1614,72 @@ elif page == "📥  Export":
                           f"{selected.lower().replace(' ', '_')}.csv",
                           use_container_width=True)
     info_card_end()
+
+# ============================================================
+# PAGE: REPORTS
+# ============================================================
+
+elif page == "📋 Reports":
+    st.markdown("""<div class="page-header">
+<h1>Reports & Exports</h1>
+<p>Generate and download comprehensive analytics reports</p>
+</div>""", unsafe_allow_html=True)
+    
+    # Phase 4: Report generation UI
+    tab1, tab2 = st.tabs(["📊 Full Report", "🛠️ Custom Report"])
+    
+    with tab1:
+        sec_title("📊 Executive Summary Report")
+        st.markdown('<p style="color:#5f6368">Comprehensive report with all tables</p>',
+                   unsafe_allow_html=True)
+        
+        if st.button("📥 Generate Full Report", type="primary", use_container_width=True):
+            with st.spinner("Building report..."):
+                report_bytes = build_report_excel(
+                    patients_data, visits_data, branches_data,
+                    doctors_data, corporates_data
+                )
+                st.success("✅ Report generated successfully!")
+                st.download_button(
+                    "📥 Download Excel Report",
+                    report_bytes,
+                    format_report_filename("full"),
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+    
+    with tab2:
+        sec_title("🛠️ Custom Report Builder")
+        st.markdown('<p style="color:#5f6368">Select data sources to include</p>',
+                   unsafe_allow_html=True)
+        
+        include_patients = st.checkbox("Patients", value=True)
+        include_visits = st.checkbox("Visits", value=True)
+        include_branches = st.checkbox("Branches", value=True)
+        include_doctors = st.checkbox("Doctors", value=False)
+        include_corporates = st.checkbox("Corporate Contracts", value=False)
+        
+        if st.button("📥 Build Custom Report", type="primary", use_container_width=True):
+            with st.spinner("Building custom report..."):
+                selected = {}
+                if include_patients: selected["Patients"] = patients_data
+                if include_visits: selected["Visits"] = visits_data
+                if include_branches: selected["Branches"] = branches_data
+                if include_doctors: selected["Doctors"] = doctors_data
+                if include_corporates: selected["Corporates"] = corporates_data
+                
+                if selected:
+                    report_bytes = build_custom_report(selected)
+                    st.success(f"✅ Custom report generated with {len(selected)} sheets!")
+                    st.download_button(
+                        "📥 Download Custom Report",
+                        report_bytes,
+                        format_report_filename("custom"),
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+                else:
+                    st.warning("Please select at least one data source")
 
 # ============================================================
 # FOOTER

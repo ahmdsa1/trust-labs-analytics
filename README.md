@@ -1,199 +1,202 @@
-# Trust Labs Analytics Dashboard
+# Trust Labs Healthcare Analytics Dashboard
 
-A professional healthcare analytics dashboard built with **Streamlit** for the Trust Labs patient management system. Real-time insights into patient churn, loyalty, branch performance, and clinical analytics.
+A production-grade healthcare analytics dashboard built with **Streamlit**, featuring real-time patient churn prediction, loyalty analytics, branch benchmarking, and clinical insights.
 
-![Streamlit](https://img.shields.io/badge/Streamlit-1.31.0-FF4B4B?logo=streamlit)
-![Python](https://img.shields.io/badge/Python-3.9+-3776AB?logo=python)
-![License](https://img.shields.io/badge/License-MIT-green)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.31+-FF4B4B?logo=streamlit)](https://streamlit.io)
+[![Python](https://img.shields.io/badge/Python-3.9+-3776AB?logo=python)](https://python.org)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+🔗 **Live Demo**: [https://fohosat.streamlit.app](https://fohosat.streamlit.app)
+
+---
 
 ## 📊 Features
 
 ### Dashboard Pages
-- **Executive Dashboard** - KPIs, demographics, trends, and branch performance
-- **Patient Lookup** - Search and view individual patient profiles
-- **Churn Analysis** - Identify high-risk patients and churn patterns
-- **Loyalty & Points** - Patient tier management and rewards program
-- **Branch Performance** - Multi-location analytics and benchmarking
-- **Analytics & Trends** - Historical data analysis and forecasting
-- **Export Reports** - Generate and download CSV/Excel reports
+| Page | Description |
+|------|-------------|
+| 🏠 **Home** | Executive KPIs, alert banners, patient demographics |
+| 🔍 **Patient Search** | Search patient profiles, visit history, risk scores |
+| 👨‍⚕️ **Doctor Search** | Doctor profiles and performance lookup |
+| 🏢 **Corporate Search** | Corporate contract management |
+| 📊 **Analytics** | 7 tabs: Overview, Churn, Revenue, Forecasting, Clinical, Data Quality, Branch Benchmark |
+| 📥 **Export** | Export any table to Excel/CSV |
+| 📋 **Reports** | Generate full executive reports or custom reports |
 
 ### Key Analytics
-- 🔍 **Churn Prediction** - Risk scoring using machine learning
-- 📊 **Patient Segmentation** - 5-cluster segmentation analysis
-- 📈 **Revenue Forecasting** - 6-month revenue predictions
-- ⭐ **Loyalty Tiers** - Gold/Silver/Bronze patient classification
-- 🏥 **Clinical Analytics** - Diabetes/hypertension prevalence
-- 🏢 **Branch Benchmarking** - Performance metrics across locations
+- 🔐 **Authentication** — Role-based access (Admin/Viewer) with session management
+- 🚨 **High-Risk Alerts** — Real-time alert banner for patients with churn risk ≥ 80
+- 🔍 **Churn Prediction** — ML-based risk scoring with patient segmentation
+- 📈 **Revenue Forecasting** — 3-month revenue predictions with confidence bands
+- ⭐ **Loyalty Tiers** — Gold/Silver/Bronze classification with points
+- 🏥 **Clinical Analytics** — Diabetes/hypertension prevalence tracking
+- 🏢 **Branch Benchmarking** — Multi-location performance leaderboard
+- 📊 **Data Quality Dashboard** — Missing data alerts and validation scores
+
+---
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 - Python 3.9+
-- pip or conda
+- pip
 
-### Installation
+### Local Installation
 
-1. **Clone the repository**
 ```bash
-git clone https://github.com/yourusername/trust-labs-analytics.git
+# 1. Clone
+git clone https://github.com/ahmdsa1/trust-labs-analytics.git
 cd trust-labs-analytics
-```
 
-2. **Create a virtual environment**
-```bash
+# 2. Create virtual environment
 python -m venv venv
+venv\Scripts\activate  # Windows
+# source venv/bin/activate  # macOS/Linux
 
-# On Windows
-venv\Scripts\activate
-
-# On macOS/Linux
-source venv/bin/activate
-```
-
-3. **Install dependencies**
-```bash
+# 3. Install dependencies
 pip install -r requirements.txt
-```
 
-4. **Prepare data**
-Place your patient and visit CSV files in the `data/` folder:
-```
-data/
-├── patients.csv
-├── visits.csv
-├── branches.csv
-└── test_orders.csv
-```
-
-5. **Run the app**
-```bash
+# 4. Run
 streamlit run app.py
 ```
 
-The app will open at `http://localhost:8501`
+Open [http://localhost:8501](http://localhost:8501)
+
+### Default Login Credentials
+| Username | Password | Role |
+|----------|----------|------|
+| `admin` | `trustlabs2024` | Full access |
+| `viewer` | `view2024` | Read-only |
+
+---
 
 ## 📁 Project Structure
 
 ```
 trust-labs-analytics/
-├── app.py                 # Main Streamlit app
-├── requirements.txt       # Python dependencies
-├── .gitignore            # Git ignore rules
+├── app.py                      # Main Streamlit application
+├── requirements.txt            # Python dependencies
+├── trust_labs.db              # SQLite database (production data)
+│
 ├── .streamlit/
-│   └── config.toml       # Streamlit configuration
-├── utils/
-│   ├── config.py         # Configuration and settings
-│   ├── data_loader.py    # Data loading utilities
-│   ├── data_cleaner.py   # Data cleaning utilities
-│   └── analytics.py      # Analytics calculations
-├── pages/                # Multi-page app components
-│   ├── dashboard.py
-│   ├── patient_lookup.py
-│   ├── churn_analysis.py
-│   ├── loyalty.py
-│   ├── branch_performance.py
-│   ├── analytics.py
-│   └── export.py
-└── data/
-    ├── patients.csv
-    ├── visits.csv
-    ├── branches.csv
-    └── .gitkeep
+│   ├── config.toml            # Streamlit theme & server config
+│   └── secrets.toml.example   # Secrets template (copy to secrets.toml)
+│
+├── static/
+│   └── styles.css             # Material Design 3 CSS
+│
+├── auth.py                    # Authentication module
+├── alerts.py                  # High-risk patient alerts
+├── reports.py                 # Report generation (Excel)
+├── database.py                # Secure DB layer (parameterized queries)
+├── components.py              # Reusable UI components
+├── config.py                  # Centralized settings
+├── logger.py                  # Structured logging
+│
+├── utils/                     # ETL Pipeline (CSV → SQLite)
+│   ├── config.py
+│   ├── data_loader.py
+│   └── data_cleaner.py
+│
+└── .gitignore
 ```
 
-## 🔧 Configuration
-
-### Streamlit Config (`config.toml`)
-```toml
-[theme]
-primaryColor = "#667eea"
-backgroundColor = "#f8f9fa"
-secondaryBackgroundColor = "#e8eef7"
-textColor = "#202124"
-font = "sans serif"
-```
-
-### Data Requirements
-- **patients.csv**: Patient demographics, health conditions, retention data
-- **visits.csv**: Visit records, dates, branches, timing
-- **branches.csv**: Branch locations, performance metrics
-- **test_orders.csv**: Test ordering and pricing data
-
-## 📊 Data Schema
-
-### Patients
-- Patient_ID, Age_Group, Gender, Patient_Type
-- Has_Diabetes, Has_Hypertension, Distance_Category
-- Total_Visits_Expected, Retention_Category
-- Churn_Risk_Score, Patient_Tier
-
-### Visits
-- Visit_Date, Visit_Number, Visit_Day, Visit_Month
-- Patient_ID, Branch_ID, Branch_Name, Branch_City
-- Visit_Hour, Visit_Time, Is_Fasting_Time
-- Is_Weekend, Is_Peak_Hour, Is_Return_Visit
+---
 
 ## 🌐 Deployment
 
 ### Streamlit Cloud (Recommended)
-1. Push your code to GitHub
-2. Go to [share.streamlit.io](https://share.streamlit.io)
-3. Click "New app" and connect your GitHub repository
-4. Select this repository and `app.py` as the main file
+
+1. **Push to GitHub**
+```bash
+git add .
+git commit -m "v4.0: Enterprise features"
+git push origin main
+```
+
+2. **Deploy**
+- Go to [share.streamlit.io](https://share.streamlit.io)
+- Connect your GitHub repo `ahmdsa1/trust-labs-analytics`
+- Select `app.py` as the main file
+- Click **Deploy**
+
+3. **Configure Secrets** (optional)
+- In Streamlit Cloud → Settings → Secrets
+- Paste contents from `.streamlit/secrets.toml.example`
+- Update passwords as needed
 
 ### Docker
+
 ```dockerfile
-FROM python:3.9-slim
+FROM python:3.11-slim
+
 WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
 COPY . .
-RUN pip install -r requirements.txt
-CMD ["streamlit", "run", "app.py"]
+
+EXPOSE 8501
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
 ```
 
-### Heroku
 ```bash
-git push heroku main
-heroku logs --tail
+docker build -t trust-labs .
+docker run -p 8501:8501 trust-labs
 ```
-
-## 🔐 Security & Data Privacy
-
-- Patient data should be in a secure SQLite database (included in `.gitignore`)
-- Credentials and API keys go in `.streamlit/secrets.toml` (not in version control)
-- Consider row-level security for multi-tenant deployments
-- HIPAA compliance considerations for healthcare data
-
-## 📈 Performance Optimization
-
-- Caching implemented with `@st.cache_data` and `@st.cache_resource`
-- Data updates refresh every 5 minutes (TTL: 300s)
-- Database connections are pooled
-- Plotly charts are optimized for large datasets
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit changes (`git commit -m 'Add AmazingFeature'`)
-4. Push to branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## 📝 License
-
-This project is licensed under the MIT License - see [LICENSE](LICENSE) file for details.
-
-## 📧 Support & Contact
-
-For issues, questions, or suggestions:
-- Open an [issue on GitHub](https://github.com/yourusername/trust-labs-analytics/issues)
-- Email: your.email@example.com
-
-## 🙏 Acknowledgments
-
-- Built with [Streamlit](https://streamlit.io)
-- Analytics powered by Plotly, Pandas, Scikit-learn
-- Data sourced from Trust Labs patient database
 
 ---
 
-**Last Updated**: April 2026 | **Version**: 1.0.0
+## 🔐 Security
+
+| Feature | Status |
+|---------|--------|
+| Password hashing (SHA-256) | ✅ |
+| Session timeout (60 min) | ✅ |
+| Role-based access control | ✅ |
+| SQL injection prevention (parameterized queries) | ✅ |
+| Input validation on all search fields | ✅ |
+| Secrets managed via `secrets.toml` | ✅ |
+
+---
+
+## 📈 Performance
+
+| Optimization | Implementation |
+|-------------|----------------|
+| Data caching | `@st.cache_data(ttl=3600)` |
+| Resource caching | `@st.cache_resource` |
+| Lazy loading | On-demand data fetching |
+| Mobile responsive | CSS media queries |
+
+---
+
+## 🛠️ Development
+
+### Adding New Features
+1. Update `config.py` for new settings
+2. Add module files (e.g., `analytics.py`)
+3. Update `app.py` with new page/tab
+4. Update `README.md` documentation
+
+### Running Tests
+```bash
+python -m py_compile app.py
+python -m py_compile auth.py alerts.py reports.py
+```
+
+---
+
+## 📝 License
+
+MIT License — see [LICENSE](LICENSE) file.
+
+## 📧 Contact
+
+- GitHub Issues: [github.com/ahmdsa1/trust-labs-analytics/issues](https://github.com/ahmdsa1/trust-labs-analytics/issues)
+- Email: [ahmdsa1@proton.com](mailto:ahmdsa1@proton.com)
+- WhatsApp: [+20 1143575727](https://wa.me/201143575727)
+
+---
+
+**Version**: 4.0.0 | **Last Updated**: July 2025

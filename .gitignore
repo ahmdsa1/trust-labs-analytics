@@ -3,6 +3,9 @@
 .env.local
 .streamlit/secrets.toml
 
+# Allow example secrets template
+!.streamlit/secrets.toml.example
+
 # Database files
 # Use Git LFS for production database (trust_labs.db)
 # Exclude other local databases
@@ -65,7 +68,6 @@ output/
 logs/
 
 # Streamlit cache
-.streamlit/
 .streamlit/cache/
 .streamlit/cache_*
 
@@ -83,3 +85,7 @@ Thumbs.db
 *.pickle
 temp/
 tmp/
+
+# Temporary fix scripts
+fix_*.py
+apply_phase*.py
