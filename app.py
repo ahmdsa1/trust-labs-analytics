@@ -679,6 +679,9 @@ high_risk_count = int((patients_data["churn_risk_category"] == "High Risk").sum(
 active_docs     = int((doctors_data["actual_referrals"] > 0).sum()) if len(doctors_data) > 0 else 0
 active_corps    = int((corporates_data["actual_visits"] > 0).sum()) if len(corporates_data) > 0 else 0
 
+# Compute monthly metrics once for global use (Home + Analytics pages)
+monthly_metrics = compute_monthly_metrics(visits_data)
+
 # ============================================================
 # SIDEBAR
 # ============================================================
@@ -745,8 +748,7 @@ if page == "🏠  Home":
     avg_loyalty = patients_data["loyalty_points"].mean() if len(patients_data) > 0 else 0
     high_risk_pct = high_risk_count / len(patients_data) * 100 if len(patients_data) > 0 else 0
 
-    # Compute real trends from monthly data
-    monthly_metrics = compute_monthly_metrics(visits_data)
+    # Real trends from pre-computed monthly_metrics
     patients_trend, patients_dir = get_trend_indicator(monthly_metrics, "unique_patients", "pct")
     visits_trend, visits_dir = get_trend_indicator(monthly_metrics, "total_visits", "pct")
     avg_trend, avg_dir = get_trend_indicator(monthly_metrics, "avg_visits_per_patient", "abs")

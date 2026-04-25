@@ -51,7 +51,6 @@ def render_alert_banner(patients_df: pd.DataFrame):
                 <div style="color:#5f6368;font-size:0.8rem;">
                     Churn risk score ≥ 80 — immediate attention recommended
                 </div>
-        </div>
     """, unsafe_allow_html=True)
 
 
@@ -74,7 +73,11 @@ def render_alert_table(patients_df: pd.DataFrame):
                 return "background-color:#fef3e8;color:#f9ab00;font-weight:600"
             return ""
         
-        styled = alerts.style.applymap(color_risk, subset=["churn_risk_score"])
+        # pandas 2.1+ compatibility: .map() replaces .applymap()
+        try:
+            styled = alerts.style.map(color_risk, subset=["churn_risk_score"])
+        except AttributeError:
+            styled = alerts.style.applymap(color_risk, subset=["churn_risk_score"])
         st.dataframe(styled, hide_index=True, use_container_width=True, height=300)
 
 
