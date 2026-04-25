@@ -354,17 +354,23 @@ def load_patients():
 @st.cache_data(ttl=3600)
 def load_visits():
     df = pd.read_sql("SELECT * FROM visits", conn)
-    df["visit_date"]  = pd.to_datetime(df["visit_date"],  errors="coerce")
-    df["visit_month"] = pd.to_datetime(df["visit_month"], errors="coerce")
+    df["Visit_Date"]  = pd.to_datetime(df["Visit_Date"],  errors="coerce")
+    df["Visit_Month"] = pd.to_datetime(df["Visit_Month"], errors="coerce")
     return df
 
 @st.cache_data(ttl=3600)
 def load_doctors():
-    return pd.read_sql("SELECT * FROM doctors", conn)
+    try:
+        return pd.read_sql("SELECT * FROM doctors", conn)
+    except Exception:
+        return pd.DataFrame({"doctor_id": [], "actual_referrals": []})
 
 @st.cache_data(ttl=3600)
 def load_corporates():
-    return pd.read_sql("SELECT * FROM corporates", conn)
+    try:
+        return pd.read_sql("SELECT * FROM corporates", conn)
+    except Exception:
+        return pd.DataFrame({"corporate_id": [], "actual_visits": []})
 
 @st.cache_data(ttl=3600)
 def load_branches():
@@ -372,15 +378,21 @@ def load_branches():
 
 @st.cache_data(ttl=3600)
 def load_monthly_trends():
-    df = pd.read_sql("SELECT * FROM monthly_trends", conn)
-    df["visit_month"] = pd.to_datetime(df["visit_month"], errors="coerce")
-    return df
+    try:
+        df = pd.read_sql("SELECT * FROM monthly_trends", conn)
+        df["visit_month"] = pd.to_datetime(df["visit_month"], errors="coerce")
+        return df
+    except Exception:
+        return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
 def load_monthly_revenue():
-    df = pd.read_sql("SELECT * FROM monthly_revenue", conn)
-    df["visit_month"] = pd.to_datetime(df["visit_month"], errors="coerce")
-    return df
+    try:
+        df = pd.read_sql("SELECT * FROM monthly_revenue", conn)
+        df["visit_month"] = pd.to_datetime(df["visit_month"], errors="coerce")
+        return df
+    except Exception:
+        return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
 def load_revenue_by_test():
@@ -392,26 +404,32 @@ def load_revenue_by_test():
 # ============================================================
 
 def search_patient_by_id(pid):
-    q = f"SELECT * FROM patients WHERE LOWER(patient_id)=LOWER('{pid}')"
+    q = f"SELECT * FROM patients WHERE LOWER(Patient_ID)=LOWER('{pid}')"
     r = pd.read_sql(q, conn)
     return r if not r.empty else None
 
 def search_doctor_by_id(did):
-    q = f"SELECT * FROM doctors WHERE LOWER(doctor_id)=LOWER('{did}')"
-    r = pd.read_sql(q, conn)
-    return r if not r.empty else None
+    try:
+        q = f"SELECT * FROM doctors WHERE LOWER(Doctor_ID)=LOWER('{did}')"
+        r = pd.read_sql(q, conn)
+        return r if not r.empty else None
+    except Exception:
+        return None
 
 def search_corporate_by_id(cid):
-    q = f"SELECT * FROM corporates WHERE LOWER(corporate_id)=LOWER('{cid}')"
-    r = pd.read_sql(q, conn)
-    return r if not r.empty else None
+    try:
+        q = f"SELECT * FROM corporates WHERE LOWER(Corporate_ID)=LOWER('{cid}')"
+        r = pd.read_sql(q, conn)
+        return r if not r.empty else None
+    except Exception:
+        return None
 
 def get_patient_visits(pid):
-    q = f"""SELECT visit_date, branch_name, visit_time, visit_day_name
-            FROM visits WHERE LOWER(patient_id)=LOWER('{pid}')
-            ORDER BY visit_date DESC"""
+    q = f"""SELECT Visit_Date, Branch_Name, Visit_Time, Visit_Day
+            FROM visits WHERE LOWER(Patient_ID)=LOWER('{pid}')
+            ORDER BY Visit_Date DESC"""
     df = pd.read_sql(q, conn)
-    df["visit_date"] = pd.to_datetime(df["visit_date"], errors="coerce")
+    df["Visit_Date"] = pd.to_datetime(df["Visit_Date"], errors="coerce")
     return df
 
 # ============================================================
@@ -432,6 +450,8 @@ def export_to_csv(df):
 # ============================================================
 
 def predict_visits(monthly_trends_df, months_ahead=3):
+    if monthly_trends_df.empty:
+        return pd.DataFrame(), 0
     df = monthly_trends_df.copy().sort_values("visit_month").reset_index(drop=True)
     df["month_num"] = range(len(df))
     X = df[["month_num"]].values
@@ -463,7 +483,7 @@ def compute_cagr(initial, final, months):
 
 def build_real_revenue_from_visits(visits_df, annual_inflation=0.33):
     avg_revenue_per_visit = 150
-    monthly = visits_df.groupby("visit_month").agg({"visit_date": "count"}).reset_index()
+    monthly = visits_df.groupby("Visit_Month").agg({"Visit_Date": "count"}).reset_index()
     monthly.columns = ["visit_month", "total_visits"]
     monthly = monthly.sort_values("visit_month").reset_index(drop=True)
     monthly["total_revenue"] = monthly["total_visits"] * avg_revenue_per_visit
@@ -513,9 +533,9 @@ corporates_data = load_corporates()
 branches_data   = load_branches()
 monthly_trends  = load_monthly_trends()
 monthly_revenue = load_monthly_revenue()
-high_risk_count = int((patients_data["churn_risk_category"] == "High Risk").sum())
-active_docs     = int((doctors_data["actual_referrals"] > 0).sum())
-active_corps    = int((corporates_data["actual_visits"] > 0).sum())
+high_risk_count = int((patients_data["churn_risk_category"] == "High Risk").sum()) if len(patients_data) > 0 else 0
+active_docs     = int((doctors_data["actual_referrals"] > 0).sum()) if len(doctors_data) > 0 else 0
+active_corps    = int((corporates_data["actual_visits"] > 0).sum()) if len(corporates_data) > 0 else 0
 
 # ============================================================
 # SIDEBAR
@@ -590,7 +610,7 @@ if page == "🏠  Home":
         sec_title("👥 Gender Distribution")
         chart_start()
         if "gender" in patients_data.columns:
-            gender_counts = patients_data["gender"].value_counts()
+            gender_counts = patients_data["Gender"].value_counts()
             fig = google_donut(gender_counts.values, gender_counts.index, ["#1a73e8", "#ea4335"])
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         else:
@@ -630,7 +650,7 @@ if page == "🏠  Home":
                 "neutral", "🥇", "#fbbc04"),
         kpi_card("Active Doctors", f"{active_docs}/{len(doctors_data)}", "active", "up", "👨‍⚕️", "#34a853"),
         kpi_card("Active Contracts", f"{active_corps}/{len(corporates_data)}", "active", "up", "🏢", "#1a73e8"),
-        kpi_card("Top Branch", branches_data.nlargest(1, "total_visits")["branch_name"].values[0] if len(branches_data) > 0 else "N/A",
+        kpi_card("Top Branch", branches_data.nlargest(1, "total_visits")["Branch_Name"].values[0] if len(branches_data) > 0 else "N/A",
                 "Leading", "neutral", "🏆", "#9334e6")
     ], 4), unsafe_allow_html=True)
 
@@ -707,8 +727,8 @@ elif page == "🔍  Patient Search":
             tier_filter   = st.multiselect("Tier", ["Gold", "Silver", "Bronze"]) if "patient_tier" in patients_data.columns else []
             risk_filter   = st.multiselect("Risk", ["Low Risk", "Medium Risk", "High Risk"]) if "churn_risk_category" in patients_data.columns else []
         with c2:
-            age_filter    = st.multiselect("Age Group", sorted(patients_data["age_group"].unique())) if "age_group" in patients_data.columns else []
-            gender_filter = st.selectbox("Gender", ["All", "Male", "Female"]) if "gender" in patients_data.columns else "All"
+            age_filter    = st.multiselect("Age Group", sorted(patients_data["Age_Group"].unique())) if "Age_Group" in patients_data.columns else []
+            gender_filter = st.selectbox("Gender", ["All", "Male", "Female"]) if "Gender" in patients_data.columns else "All"
         with c3:
             min_visits  = st.number_input("Min Visits", 0, step=1)
             min_loyalty = st.number_input("Min Loyalty", 0, step=10)
@@ -719,10 +739,10 @@ elif page == "🔍  Patient Search":
                 results = results[results["patient_tier"].isin(tier_filter)]
             if risk_filter and "churn_risk_category" in results.columns:   
                 results = results[results["churn_risk_category"].isin(risk_filter)]
-            if age_filter and "age_group" in results.columns:    
-                results = results[results["age_group"].isin(age_filter)]
-            if gender_filter != "All" and "gender" in results.columns: 
-                results = results[results["gender"] == gender_filter]
+            if age_filter and "Age_Group" in results.columns:    
+                results = results[results["Age_Group"].isin(age_filter)]
+            if gender_filter != "All" and "Gender" in results.columns: 
+                results = results[results["Gender"] == gender_filter]
             if min_visits > 0 and "total_visits" in results.columns:  
                 results = results[results["total_visits"] >= min_visits]
             if min_loyalty > 0 and "loyalty_points" in results.columns: 
@@ -730,7 +750,7 @@ elif page == "🔍  Patient Search":
 
             st.markdown(f'<p style="color:#5f6368;font-size:.85rem">Found {len(results):,} patients</p>',
                        unsafe_allow_html=True)
-            display_cols = ["patient_id", "age_group", "gender", "patient_tier",
+            display_cols = ["Patient_ID", "Age_Group", "Gender", "patient_tier",
                            "loyalty_points", "churn_risk_category", "total_visits"]
             display_cols = [c for c in display_cols if c in results.columns]
             st.dataframe(results[display_cols],
