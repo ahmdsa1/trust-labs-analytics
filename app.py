@@ -914,7 +914,7 @@ elif page == "📊  Analytics":
             chart_start()
             if len(branches_data) > 0:
                 top5 = branches_data.nlargest(5, "total_visits")
-                fig = px.bar(top5, x="total_visits", y="branch_name", orientation="h",
+                fig = px.bar(top5, x="total_visits", y="Branch_Name", orientation="h",
                             color="performance_score", color_continuous_scale="Blues")
                 google_theme(fig, height=280)
                 fig.update_layout(showlegend=False, yaxis_title=None, xaxis_title="Total Visits")
@@ -925,8 +925,8 @@ elif page == "📊  Analytics":
 
         sec_title("👥 Age Distribution")
         chart_start()
-        if "age_group" in patients_data.columns:
-            age_dist = patients_data["age_group"].value_counts().sort_index()
+        if "Age_Group" in patients_data.columns:
+            age_dist = patients_data["Age_Group"].value_counts().sort_index()
             fig = px.bar(x=age_dist.index, y=age_dist.values,
                         color=age_dist.values, color_continuous_scale="Viridis")
             google_theme(fig, height=300)
