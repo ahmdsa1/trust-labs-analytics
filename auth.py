@@ -4,10 +4,12 @@ Simple session-based auth with role-based access control.
 """
 
 import hashlib
-import secrets
 import streamlit as st
 from datetime import datetime, timedelta
 
+
+# ── Toggle authentication (set to False to disable) ──
+AUTH_ENABLED = True
 
 # ── Default Users (in production, use database + env vars) ──
 DEFAULT_USERS = {
