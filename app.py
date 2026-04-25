@@ -504,6 +504,8 @@ def build_real_revenue_from_visits(visits_df, annual_inflation=0.33):
     return monthly
 
 def build_real_revenue(mr_df, annual_inflation=0.33):
+    if mr_df.empty or len(mr_df) < 2:
+        return pd.DataFrame()
     df = (mr_df.sort_values("visit_month").dropna(subset=["total_revenue"])
           .copy().reset_index(drop=True))
     if df.empty or len(df) < 2:
@@ -609,7 +611,7 @@ if page == "🏠  Home":
     with c1:
         sec_title("👥 Gender Distribution")
         chart_start()
-        if "gender" in patients_data.columns:
+        if "Gender" in patients_data.columns:
             gender_counts = patients_data["Gender"].value_counts()
             fig = google_donut(gender_counts.values, gender_counts.index, ["#1a73e8", "#ea4335"])
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
@@ -780,13 +782,15 @@ elif page == "👨‍⚕️  Doctor Search":
         if doctor is None or doctor.empty:
             st.error(f"❌ Doctor ID '{doctor_id}' not found!")
         else:
-            st.success(f"✅ Doctor Found: **{doctor['doctor_name'].values[0]}**")
+            doc_name = doctor["doctor_name"].values[0] if "doctor_name" in doctor.columns else doctor_id
+            st.success(f"✅ Doctor Found: **{doc_name}**")
             refs    = int(doctor["actual_referrals"].values[0]) if "actual_referrals" in doctor.columns else 0
             patients_ref = int(doctor["unique_patients_referred"].values[0]) if "unique_patients_referred" in doctor.columns else 0
             revenue = float(doctor["total_revenue_generated"].values[0]) if "total_revenue_generated" in doctor.columns else 0
             perf    = doctor["performance_category"].values[0] if "performance_category" in doctor.columns else "N/A"
+            specialty = doctor["specialty"].values[0] if "specialty" in doctor.columns else "Unknown"
             st.markdown(kpi_row([
-                kpi_card("Specialty", doctor["specialty"].values[0] if "specialty" in doctor.columns else "Unknown", "", "neutral", "🩺", "#1a73e8"),
+                kpi_card("Specialty", specialty, "", "neutral", "🩺", "#1a73e8"),
                 kpi_card("Referrals", f"{refs:,}", "", "up", "📊", "#34a853"),
                 kpi_card("Patients", f"{patients_ref:,}", "unique", "up", "👥", "#fbbc04"),
                 kpi_card("Revenue", f"{revenue/1000:.1f}K EGP", "generated", "up", "💰", "#9334e6"),
@@ -804,7 +808,9 @@ elif page == "👨‍⚕️  Doctor Search":
         display_cols = ["doctor_id", "doctor_name", "specialty", "actual_referrals",
             "unique_patients_referred", "total_revenue_generated", "performance_category"]
         display_cols = [c for c in display_cols if c in display_doctors.columns]
-        display_doctors = display_doctors[display_cols].sort_values("actual_referrals", ascending=False)
+        display_doctors = display_doctors[display_cols]
+        if "actual_referrals" in display_doctors.columns:
+            display_doctors = display_doctors.sort_values("actual_referrals", ascending=False)
         st.dataframe(display_doctors, hide_index=True, use_container_width=True, height=400)
         st.download_button("📊 Export Doctors", export_to_excel(display_doctors), "doctors_performance.xlsx")
     else:
