@@ -1296,35 +1296,39 @@ elif page == "‍️  Doctors":
     # ── TAB 3: BRANCH FLOW ──
     with tab_flow:
         # Load doctor_branch table for branch flow analysis
+        sec_title("🩺 Doctor Referral Flow", "Which doctors drive branch volume?")
         try:
-            doctor_branch = pd.read_sql("SELECT * FROM doctor_branch", conn)
-            if not doctor_branch.empty and not doctors_data.empty:
-                # Merge with doctors to get specialties
-                flow = doctor_branch.merge(
-                    doctors_data[["doctor_id", "specialty"]],
-                    on="doctor_id",
-                    how="left"
-                )
-                if "branch_name_ar" in flow.columns and "specialty" in flow.columns and "referrals" in flow.columns:
-                    sec_title("Referral Flow by Branch & Specialty")
-                    chart_start()
-                    fig = px.bar(flow, x="referrals", y="branch_name_ar", orientation="h",
-                                 color="specialty", barmode="stack")
-                    google_theme(fig, height=400)
-                    fig.update_layout(xaxis_title="Referrals", yaxis_title="Branch")
-                    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-                    chart_end()
+            doctor_branch = pd.read_sql("SELECT * FROM doctor_branch LIMIT 1", conn)
+            if not doctor_branch.empty:
+                doctor_branch = pd.read_sql("SELECT * FROM doctor_branch", conn)
+                if not doctor_branch.empty and not doctors_data.empty:
+                    # Merge with doctors to get specialties
+                    flow = doctor_branch.merge(
+                        doctors_data[["doctor_id", "specialty"]],
+                        on="doctor_id",
+                        how="left"
+                    )
+                    if "branch_name_ar" in flow.columns and "specialty" in flow.columns and "referrals" in flow.columns:
+                        chart_start()
+                        fig = px.bar(flow, x="referrals", y="branch_name_ar", orientation="h",
+                                     color="specialty", barmode="stack")
+                        google_theme(fig, height=400)
+                        fig.update_layout(xaxis_title="Referrals", yaxis_title="Branch")
+                        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                        chart_end()
 
-                    info_card_start("Branch Flow Summary")
-                    summary = flow.groupby(["branch_name_ar", "specialty"])["referrals"].sum().reset_index()
-                    st.dataframe(summary, hide_index=True, use_container_width=True)
-                    info_card_end()
+                        info_card_start("Branch Flow Summary")
+                        summary = flow.groupby(["branch_name_ar", "specialty"])["referrals"].sum().reset_index()
+                        st.dataframe(summary, hide_index=True, use_container_width=True)
+                        info_card_end()
+                    else:
+                        st.warning("Required columns missing for branch flow visualization")
                 else:
-                    st.info("Required columns missing for branch flow visualization")
+                    st.info("Branch flow data not available")
             else:
-                st.info("Branch flow data not available")
+                st.error("doctor_branch table not found. Rebuilding database...")
         except Exception as e:
-            st.error(f"Error loading branch flow data: {str(e)}")
+            st.error(f"Error loading branch flow data: {str(e)}. Please refresh data using the sidebar button.")
 
 # ============================================================
 # PAGE: ANALYTICS
@@ -1992,54 +1996,54 @@ elif page == "  Analytics":
 
     # ── TAB 7: BRANCH OPERATIONAL SCORECARD (Feature 6) ──
     with tab7:
-        sec_title("Branch Operational Scorecard", "Performance metrics across all branches")
-        if "Branch_Name" in filtered_visits.columns:
-            # Build aggregation dict only for columns that exist
-            agg_dict = {}
-            if "Visit_ID" in filtered_visits.columns:
-                agg_dict["total_visits"] = ("Visit_ID", "count")
-            if "Patient_ID" in filtered_visits.columns:
-                agg_dict["unique_patients"] = ("Patient_ID", "nunique")
-            if "Visit_Duration" in filtered_visits.columns:
-                agg_dict["avg_duration"] = ("Visit_Duration", "mean")
-            if "Is_Weekend" in filtered_visits.columns:
-                agg_dict["weekend_visits"] = ("Is_Weekend", "sum")
-            if "Is_Peak_Hour" in filtered_visits.columns:
-                agg_dict["peak_visits"] = ("Is_Peak_Hour", "sum")
-            if "Amount_Paid" in filtered_visits.columns:
-                agg_dict["revenue"] = ("Amount_Paid", "sum")
+        sec_title("📊 Branch Operational Scorecard", "Performance metrics across all branches")
+        try:
+            if "Branch_Name" in filtered_visits.columns and len(filtered_visits) > 0:
+                # Build aggregation dict only for columns that exist
+                agg_dict = {}
+                if "Visit_ID" in filtered_visits.columns:
+                    agg_dict["total_visits"] = ("Visit_ID", "count")
+                if "Patient_ID" in filtered_visits.columns:
+                    agg_dict["unique_patients"] = ("Patient_ID", "nunique")
+                if "Visit_Duration" in filtered_visits.columns:
+                    agg_dict["avg_duration"] = ("Visit_Duration", "mean")
+                if "Is_Weekend" in filtered_visits.columns:
+                    agg_dict["weekend_visits"] = ("Is_Weekend", "sum")
+                if "Is_Peak_Hour" in filtered_visits.columns:
+                    agg_dict["peak_visits"] = ("Is_Peak_Hour", "sum")
+                if "Amount_Paid" in filtered_visits.columns:
+                    agg_dict["revenue"] = ("Amount_Paid", "sum")
 
-            if not agg_dict:
-                st.info("No aggregatable columns found in visits data")
-            else:
-                branch_ops = filtered_visits.groupby("Branch_Name").agg(**agg_dict).reset_index()
+                if not agg_dict or len(agg_dict) < 2:
+                    st.warning("⚠️ Insufficient data: Need Visit_ID and Amount_Paid columns. Checking database...")
+                else:
+                    branch_ops = filtered_visits.groupby("Branch_Name").agg(**agg_dict).reset_index()
 
-                # Compute derived metrics only if base columns exist
-                if "weekend_visits" in branch_ops.columns and "total_visits" in branch_ops.columns:
-                    branch_ops["weekend_pct"] = (branch_ops["weekend_visits"] / branch_ops["total_visits"] * 100).round(1)
-                if "peak_visits" in branch_ops.columns and "total_visits" in branch_ops.columns:
-                    branch_ops["peak_pct"] = (branch_ops["peak_visits"] / branch_ops["total_visits"] * 100).round(1)
-                if "revenue" in branch_ops.columns and "total_visits" in branch_ops.columns:
-                    branch_ops["revenue_per_visit"] = (branch_ops["revenue"] / branch_ops["total_visits"]).round(0)
+                    # Compute derived metrics only if base columns exist
+                    if "weekend_visits" in branch_ops.columns and "total_visits" in branch_ops.columns:
+                        branch_ops["weekend_pct"] = (branch_ops["weekend_visits"] / branch_ops["total_visits"] * 100).round(1)
+                    if "peak_visits" in branch_ops.columns and "total_visits" in branch_ops.columns:
+                        branch_ops["peak_pct"] = (branch_ops["peak_visits"] / branch_ops["total_visits"] * 100).round(1)
+                    if "revenue" in branch_ops.columns and "total_visits" in branch_ops.columns:
+                        branch_ops["revenue_per_visit"] = (branch_ops["revenue"] / branch_ops["total_visits"]).round(0)
 
-                total_branches = len(branch_ops)
-                top_branch_visits = branch_ops.loc[branch_ops["total_visits"].idxmax(), "Branch_Name"] if total_branches > 0 and "total_visits" in branch_ops.columns else "N/A"
-                top_branch_revenue = branch_ops.loc[branch_ops["revenue"].idxmax(), "Branch_Name"] if total_branches > 0 and "revenue" in branch_ops.columns else "N/A"
-                avg_rev_visit = branch_ops["revenue_per_visit"].mean() if total_branches > 0 and "revenue_per_visit" in branch_ops.columns else 0
+                    total_branches = len(branch_ops)
+                    top_branch_visits = branch_ops.loc[branch_ops["total_visits"].idxmax(), "Branch_Name"] if total_branches > 0 and "total_visits" in branch_ops.columns else "N/A"
+                    top_branch_revenue = branch_ops.loc[branch_ops["revenue"].idxmax(), "Branch_Name"] if total_branches > 0 and "revenue" in branch_ops.columns else "N/A"
+                    avg_rev_visit = branch_ops["revenue_per_visit"].mean() if total_branches > 0 and "revenue_per_visit" in branch_ops.columns else 0
 
-                # Debug info
-                if total_branches == 0:
-                    st.warning("No branch data available for the selected date range")
-                elif "total_visits" not in branch_ops.columns:
-                    st.warning("Visit data not available for branch analysis")
+                    # Debug info
+                    if total_branches == 0:
+                        st.warning("No branch data available for the selected date range")
+                    elif "total_visits" not in branch_ops.columns:
+                        st.error("Visit data not available for branch analysis. Please verify database.")
 
                 st.markdown(kpi_row([
-                    kpi_card("Total Branches", str(total_branches), "", "neutral", "", "#1a73e8"),
-                    kpi_card("Top by Visits", str(top_branch_visits), "", "up", "", "#34a853"),
-                    kpi_card("Top by Revenue", str(top_branch_revenue), "", "up", "", "#fbbc04"),
-                    kpi_card("Avg Rev/Visit", f"{avg_rev_visit:,.0f} EGP", "", "neutral", "", "#9334e6"),
-                ], 4), unsafe_allow_html=True)
-
+                            kpi_card("Total Branches", str(total_branches), "", "neutral", "", "#1a73e8"),
+                            kpi_card("Top by Visits", str(top_branch_visits), "", "up", "", "#34a853"),
+                            kpi_card("Top by Revenue", str(top_branch_revenue), "", "up", "", "#fbbc04"),
+                            kpi_card("Avg Rev/Visit", f"{avg_rev_visit:,.0f} EGP", "", "neutral", "", "#9334e6"),
+                        ], 4), unsafe_allow_html=True)
                 # Only show charts if we have the necessary columns
                 if "total_visits" in branch_ops.columns:
                     sec_title(" Visits vs Revenue per Visit by Branch")
@@ -2106,62 +2110,71 @@ elif page == "  Analytics":
 
     # ── TAB 8: REVENUE MIX (Feature 8) ──
     with tab8:
-        sec_title("Revenue Per Patient Tier", "Which tier delivers the most value?")
-        # Use visits_data directly since it already has patient_tier
-        if "Amount_Paid" in visits_data.columns and "patient_tier" in visits_data.columns:
-            tier_revenue = visits_data.groupby("patient_tier").agg(
-                total_revenue=("Amount_Paid","sum"),
-                visit_count=("Visit_ID","count"),
-                unique_patients=("Patient_ID","nunique")
-            ).reset_index()
-            tier_revenue["revenue_per_patient"] = (tier_revenue["total_revenue"] / tier_revenue["unique_patients"]).round(0)
-            tier_revenue["revenue_per_visit"] = (tier_revenue["total_revenue"] / tier_revenue["visit_count"]).round(0)
-            tier_revenue["revenue_share_pct"] = (tier_revenue["total_revenue"] / tier_revenue["total_revenue"].sum() * 100).round(1)
+        sec_title("💰 Revenue Per Patient Tier", "Which tier delivers the most value?")
+        # Filter visits by date range and check for required columns
+        tier_visits = filtered_visits if "patient_tier" in filtered_visits.columns and "Amount_Paid" in filtered_visits.columns else None
+        
+        if tier_visits is not None and len(tier_visits) > 0:
+            try:
+                tier_revenue = tier_visits.groupby("patient_tier").agg(
+                    total_revenue=("Amount_Paid","sum"),
+                    visit_count=("Visit_ID" if "Visit_ID" in tier_visits.columns else "patient_tier","count"),
+                    unique_patients=("Patient_ID" if "Patient_ID" in tier_visits.columns else "patient_tier","nunique")
+                ).reset_index()
+                tier_revenue["revenue_per_patient"] = (tier_revenue["total_revenue"] / tier_revenue["unique_patients"].clip(lower=1)).round(0)
+                tier_revenue["revenue_per_visit"] = (tier_revenue["total_revenue"] / tier_revenue["visit_count"].clip(lower=1)).round(0)
+                tier_revenue["revenue_share_pct"] = (tier_revenue["total_revenue"] / tier_revenue["total_revenue"].sum() * 100).round(1)
 
-            gold_val = tier_revenue[tier_revenue['patient_tier']=='Gold']['revenue_per_patient'].values
-            silver_val = tier_revenue[tier_revenue['patient_tier']=='Silver']['revenue_per_patient'].values
-            bronze_val = tier_revenue[tier_revenue['patient_tier']=='Bronze']['revenue_per_patient'].values
+                gold_val = tier_revenue[tier_revenue['patient_tier']=='Gold']['revenue_per_patient'].values
+                silver_val = tier_revenue[tier_revenue['patient_tier']=='Silver']['revenue_per_patient'].values
+                bronze_val = tier_revenue[tier_revenue['patient_tier']=='Bronze']['revenue_per_patient'].values
 
-            st.markdown(kpi_row([
-                kpi_card("Gold Rev/Patient", f"{gold_val[0]:,.0f}" if len(gold_val) > 0 else "N/A", "", "neutral", "", "#fbbc04"),
-                kpi_card("Silver Rev/Patient", f"{silver_val[0]:,.0f}" if len(silver_val) > 0 else "N/A", "", "neutral", "", "#9aa0a6"),
-                kpi_card("Bronze Rev/Patient", f"{bronze_val[0]:,.0f}" if len(bronze_val) > 0 else "N/A", "", "neutral", "", "#cd7f32"),
-            ], 3), unsafe_allow_html=True)
+                st.markdown(kpi_row([
+                    kpi_card("Gold Rev/Patient", f"{gold_val[0]:,.0f}" if len(gold_val) > 0 else "N/A", "", "neutral", "✨", "#fbbc04"),
+                    kpi_card("Silver Rev/Patient", f"{silver_val[0]:,.0f}" if len(silver_val) > 0 else "N/A", "", "neutral", "⭐", "#9aa0a6"),
+                    kpi_card("Bronze Rev/Patient", f"{bronze_val[0]:,.0f}" if len(bronze_val) > 0 else "N/A", "", "neutral", "🥉", "#cd7f32"),
+                ], 3), unsafe_allow_html=True)
 
-            sec_title("Revenue Share by Tier")
-            chart_start()
-            fig = px.bar(tier_revenue, x="patient_tier", y="total_revenue",
-                         color="patient_tier", text="revenue_share_pct",
-                         color_discrete_map={"Gold":"#fbbc04","Silver":"#9aa0a6","Bronze":"#cd7f32"})
-            fig.update_traces(texttemplate="%{text}%", textposition="outside")
-            google_theme(fig, height=300)
-            fig.update_layout(showlegend=False, xaxis_title=None, yaxis_title="Revenue (EGP)")
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-            chart_end()
+                sec_title("💹 Revenue Share by Tier")
+                chart_start()
+                fig = px.bar(tier_revenue, x="patient_tier", y="total_revenue",
+                             color="patient_tier", text="revenue_share_pct",
+                             color_discrete_map={"Gold":"#fbbc04","Silver":"#9aa0a6","Bronze":"#cd7f32"})
+                fig.update_traces(texttemplate="%{text}%", textposition="outside")
+                google_theme(fig, height=300)
+                fig.update_layout(showlegend=False, xaxis_title=None, yaxis_title="Revenue (EGP)")
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                chart_end()
 
-            sec_title("Patients vs Revenue by Tier")
-            chart_start()
-            fig = px.scatter(tier_revenue, x="unique_patients", y="total_revenue",
-                             color="patient_tier", size="revenue_per_patient",
-                             color_discrete_map={"Gold":"#fbbc04","Silver":"#9aa0a6","Bronze":"#cd7f32"},
-                             text="patient_tier")
-            fig.update_traces(textposition="top center")
-            google_theme(fig, height=300)
-            fig.update_layout(xaxis_title="Unique Patients", yaxis_title="Total Revenue (EGP)")
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-            chart_end()
+                sec_title("👥 Patients vs Revenue by Tier")
+                chart_start()
+                fig = px.scatter(tier_revenue, x="unique_patients", y="total_revenue",
+                                 color="patient_tier", size="revenue_per_patient",
+                                 color_discrete_map={"Gold":"#fbbc04","Silver":"#9aa0a6","Bronze":"#cd7f32"},
+                                 text="patient_tier")
+                fig.update_traces(textposition="top center")
+                google_theme(fig, height=300)
+                fig.update_layout(xaxis_title="Unique Patients", yaxis_title="Total Revenue (EGP)")
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                chart_end()
 
-            info_card_start("Tier Metrics Table")
-            st.dataframe(tier_revenue.sort_values("total_revenue", ascending=False),
-                         hide_index=True, use_container_width=True)
-            st.download_button("Export Tier Analysis", export_to_excel(tier_revenue), "tier_revenue.xlsx")
-            info_card_end()
+                info_card_start("📊 Tier Metrics Table")
+                st.dataframe(tier_revenue.sort_values("total_revenue", ascending=False),
+                             hide_index=True, use_container_width=True)
+                st.download_button("📥 Export Tier Analysis", export_to_excel(tier_revenue), "tier_revenue.xlsx")
+                info_card_end()
+            except Exception as e:
+                st.error(f"Error processing tier data: {str(e)}")
         else:
-            st.info("Amount_Paid or patient_tier columns not available")
+            st.warning("⚠️ Amount_Paid or patient_tier columns not available in visit data")
+            except Exception as e:
+                st.error(f"Error processing tier data: {str(e)}")
+        else:
+            st.warning("Amount_Paid or patient_tier columns not available in visit data. Running database rebuild...")
 
     # ── TAB 9: BRANCH VS BRANCH COMPARISON ──
     with tab9:
-        sec_title("️ Branch vs Branch Comparison", "Head-to-head performance analysis")
+        sec_title("⚔️ Branch vs Branch Comparison", "Head-to-head performance analysis")
         if "Branch_Name" in filtered_visits.columns:
             branches_list = sorted(filtered_visits["Branch_Name"].unique().tolist())
             if len(branches_list) >= 2:
@@ -2233,7 +2246,7 @@ elif page == "  Analytics":
                             st.markdown(kpi_row(cards, cols=len(cards)), unsafe_allow_html=True)
 
                         # Grouped bar chart comparison
-                        sec_title(" Side-by-Side Comparison", "Key metrics across selected branches")
+                        sec_title("📊 Side-by-Side Comparison", "Key metrics across selected branches")
                         chart_start()
                         compare_cols = [c for c in ["total_visits", "unique_patients", "revenue", "revenue_per_visit"] if c in bm.columns]
                         if compare_cols:
@@ -2259,7 +2272,7 @@ elif page == "  Analytics":
                         chart_end()
 
                         # Difference table
-                        info_card_start(" Metric Comparison Table")
+                        info_card_start("📋 Metric Comparison Table")
                         diff_data = []
                         for col in compare_cols:
                             a_v = a_data[col] if col in a_data.index else 0

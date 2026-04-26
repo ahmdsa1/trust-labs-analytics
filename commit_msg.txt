@@ -1,0 +1,13 @@
+feat(dashboard): Phase 1 - 10 feature improvements
+
+Features added:
+1. Global Date Range Filter (sidebar)
+2. Data Freshness Indicator (sidebar refresh)
+3. Doctor Ranking Dashboard page
+4. Corporate Utilization Gap analysis
+5. Day-of-Week x Hour heatmap
+6. Branch Operational Scorecard
+7. No-Show Cost Estimator
+8. Revenue Per Patient Tier analysis
+9. Patient Retention Cohort Table
+10. PDF Report Export
