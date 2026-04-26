@@ -1060,6 +1060,7 @@ elif page == "🏢  Corporate Search":
             st.markdown("<br>", unsafe_allow_html=True)
             search_btn = st.button("🔍 Search", type="primary", use_container_width=True)
 
+        corp = None
         if search_btn and corp_id:
             corp = search_corporate_by_id(corp_id)
         if corp is None or corp.empty:
@@ -1362,6 +1363,9 @@ elif page == "📊  Analytics":
             heat_df = filtered_visits.groupby(["Visit_Day", "Visit_Hour"]).size().reset_index(name="visits")
             heat_pivot = heat_df.pivot(index="Visit_Day", columns="Visit_Hour", values="visits").fillna(0)
             heat_pivot = heat_pivot.reindex([d for d in day_order if d in heat_pivot.index])
+            # Convert numpy types to native Python types for JSON serialization
+            heat_pivot.columns = [int(c) for c in heat_pivot.columns]
+            heat_pivot = heat_pivot.astype(int)
             fig = px.imshow(heat_pivot, color_continuous_scale="Blues", aspect="auto",
                             labels=dict(x="Hour of Day", y="Day of Week", color="Visits"))
             fig.update_layout(height=300, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
@@ -1516,10 +1520,14 @@ elif page == "📊  Analytics":
             visits_data["cohort_month"] = visits_data.groupby("Patient_ID")["Visit_Date"].transform("min").dt.to_period("M")
             visits_data["visit_period"] = visits_data["Visit_Date"].dt.to_period("M")
             cohort_data = visits_data.groupby(["cohort_month","visit_period"])["Patient_ID"].nunique().reset_index()
-            cohort_data["period_number"] = (cohort_data["visit_period"] - cohort_data["cohort_month"]).apply(lambda x: x.n)
+            cohort_data["period_number"] = (cohort_data["visit_period"] - cohort_data["cohort_month"]).apply(lambda x: int(x.n))
             cohort_pivot = cohort_data.pivot(index="cohort_month", columns="period_number", values="Patient_ID")
             cohort_pct = cohort_pivot.divide(cohort_pivot[0], axis=0) * 100
             cohort_pct = cohort_pct.iloc[:, :12]
+            # Convert Period index and numpy types to serializable Python types
+            cohort_pct = cohort_pct.astype(float)
+            cohort_pct.index = [str(p) for p in cohort_pct.index]
+            cohort_pct.columns = [int(c) for c in cohort_pct.columns]
             fig = px.imshow(cohort_pct.round(1), color_continuous_scale="Blues",
                             labels=dict(x="Months Since First Visit", y="Cohort", color="Retention %"),
                             text_auto=".0f", aspect="auto")
