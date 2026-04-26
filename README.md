@@ -1,4 +1,4 @@
-# Trust Labs Healthcare Analytics Dashboard
+# Fohosat  Labs Healthcare Analytics Dashboard
 
 A production-grade healthcare analytics dashboard built with **Streamlit**, featuring real-time patient churn prediction, loyalty analytics, branch benchmarking, and clinical insights.
 
