@@ -1871,75 +1871,107 @@ elif page == "📊  Analytics":
     with tab7:
         sec_title("🏥 Branch Operational Scorecard", "Performance metrics across all branches")
         if "Branch_Name" in filtered_visits.columns:
-            branch_ops = filtered_visits.groupby("Branch_Name").agg(
-                total_visits=("Visit_ID", "count"),
-                unique_patients=("Patient_ID", "nunique"),
-                avg_duration=("Visit_Duration", "mean"),
-                weekend_visits=("Is_Weekend", "sum"),
-                peak_visits=("Is_Peak_Hour", "sum"),
-                revenue=("Amount_Paid", "sum"),
-            ).reset_index()
-            branch_ops["weekend_pct"] = (branch_ops["weekend_visits"] / branch_ops["total_visits"] * 100).round(1)
-            branch_ops["peak_pct"] = (branch_ops["peak_visits"] / branch_ops["total_visits"] * 100).round(1)
-            branch_ops["revenue_per_visit"] = (branch_ops["revenue"] / branch_ops["total_visits"]).round(0)
+            # Build aggregation dict only for columns that exist
+            agg_dict = {}
+            if "Visit_ID" in filtered_visits.columns:
+                agg_dict["total_visits"] = ("Visit_ID", "count")
+            if "Patient_ID" in filtered_visits.columns:
+                agg_dict["unique_patients"] = ("Patient_ID", "nunique")
+            if "Visit_Duration" in filtered_visits.columns:
+                agg_dict["avg_duration"] = ("Visit_Duration", "mean")
+            if "Is_Weekend" in filtered_visits.columns:
+                agg_dict["weekend_visits"] = ("Is_Weekend", "sum")
+            if "Is_Peak_Hour" in filtered_visits.columns:
+                agg_dict["peak_visits"] = ("Is_Peak_Hour", "sum")
+            if "Amount_Paid" in filtered_visits.columns:
+                agg_dict["revenue"] = ("Amount_Paid", "sum")
 
-            total_branches = len(branch_ops)
-            top_branch_visits = branch_ops.loc[branch_ops["total_visits"].idxmax(), "Branch_Name"] if total_branches > 0 else "N/A"
-            top_branch_revenue = branch_ops.loc[branch_ops["revenue"].idxmax(), "Branch_Name"] if total_branches > 0 else "N/A"
-            avg_rev_visit = branch_ops["revenue_per_visit"].mean() if total_branches > 0 else 0
+            if not agg_dict:
+                st.info("No aggregatable columns found in visits data")
+            else:
+                branch_ops = filtered_visits.groupby("Branch_Name").agg(**agg_dict).reset_index()
 
-            st.markdown(kpi_row([
-                kpi_card("Total Branches", str(total_branches), "", "neutral", "🏥", "#1a73e8"),
-                kpi_card("Top by Visits", top_branch_visits, "", "up", "📊", "#34a853"),
-                kpi_card("Top by Revenue", top_branch_revenue, "", "up", "💰", "#fbbc04"),
-                kpi_card("Avg Rev/Visit", f"{avg_rev_visit:,.0f} EGP", "", "neutral", "💵", "#9334e6"),
-            ], 4), unsafe_allow_html=True)
+                # Compute derived metrics only if base columns exist
+                if "weekend_visits" in branch_ops.columns and "total_visits" in branch_ops.columns:
+                    branch_ops["weekend_pct"] = (branch_ops["weekend_visits"] / branch_ops["total_visits"] * 100).round(1)
+                if "peak_visits" in branch_ops.columns and "total_visits" in branch_ops.columns:
+                    branch_ops["peak_pct"] = (branch_ops["peak_visits"] / branch_ops["total_visits"] * 100).round(1)
+                if "revenue" in branch_ops.columns and "total_visits" in branch_ops.columns:
+                    branch_ops["revenue_per_visit"] = (branch_ops["revenue"] / branch_ops["total_visits"]).round(0)
 
-            sec_title("📊 Visits vs Revenue per Visit by Branch")
-            chart_start()
-            fig = go.Figure()
-            fig.add_trace(go.Bar(x=branch_ops["Branch_Name"], y=branch_ops["total_visits"],
-                                 name="Total Visits", marker_color="#1a73e8", yaxis="y"))
-            fig.add_trace(go.Scatter(x=branch_ops["Branch_Name"], y=branch_ops["revenue_per_visit"],
-                                     name="Rev/Visit", mode="lines+markers", marker_color="#34a853", yaxis="y2"))
-            fig.update_layout(
-                yaxis=dict(title="Total Visits", side="left"),
-                yaxis2=dict(title="Revenue/Visit (EGP)", overlaying="y", side="right"),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02),
-                height=350, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"
-            )
-            google_theme(fig, height=350)
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-            chart_end()
+                total_branches = len(branch_ops)
+                top_branch_visits = branch_ops.loc[branch_ops["total_visits"].idxmax(), "Branch_Name"] if total_branches > 0 and "total_visits" in branch_ops.columns else "N/A"
+                top_branch_revenue = branch_ops.loc[branch_ops["revenue"].idxmax(), "Branch_Name"] if total_branches > 0 and "revenue" in branch_ops.columns else "N/A"
+                avg_rev_visit = branch_ops["revenue_per_visit"].mean() if total_branches > 0 and "revenue_per_visit" in branch_ops.columns else 0
 
-            sec_title("🕸️ Branch Performance Radar")
-            chart_start()
-            metrics = ["total_visits", "revenue", "unique_patients", "peak_pct", "weekend_pct"]
-            radar_df = branch_ops.copy()
-            for m in metrics:
-                max_val = radar_df[m].max()
-                radar_df[m + "_norm"] = (radar_df[m] / max_val * 100).round(1) if max_val > 0 else 0
+                st.markdown(kpi_row([
+                    kpi_card("Total Branches", str(total_branches), "", "neutral", "🏥", "#1a73e8"),
+                    kpi_card("Top by Visits", top_branch_visits, "", "up", "📊", "#34a853"),
+                    kpi_card("Top by Revenue", top_branch_revenue, "", "up", "💰", "#fbbc04"),
+                    kpi_card("Avg Rev/Visit", f"{avg_rev_visit:,.0f} EGP", "", "neutral", "💵", "#9334e6"),
+                ], 4), unsafe_allow_html=True)
 
-            fig = go.Figure()
-            for _, row in radar_df.iterrows():
-                fig.add_trace(go.Scatterpolar(
-                    r=[row[m + "_norm"] for m in metrics] + [row[metrics[0] + "_norm"]],
-                    theta=[m.replace("_", " ").title() for m in metrics] + [metrics[0].replace("_", " ").title()],
-                    fill="toself", name=row["Branch_Name"], opacity=0.3
-                ))
-            fig.update_layout(
-                polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
-                showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.2),
-                height=450, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"
-            )
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-            chart_end()
+                # Only show charts if we have the necessary columns
+                if "total_visits" in branch_ops.columns:
+                    sec_title("📊 Visits vs Revenue per Visit by Branch")
+                    chart_start()
+                    fig = go.Figure()
+                    fig.add_trace(go.Bar(x=branch_ops["Branch_Name"], y=branch_ops["total_visits"],
+                                         name="Total Visits", marker_color="#1a73e8", yaxis="y"))
+                    if "revenue_per_visit" in branch_ops.columns:
+                        fig.add_trace(go.Scatter(x=branch_ops["Branch_Name"], y=branch_ops["revenue_per_visit"],
+                                                 name="Rev/Visit", mode="lines+markers", marker_color="#34a853", yaxis="y2"))
+                    fig.update_layout(
+                        yaxis=dict(title="Total Visits", side="left"),
+                        yaxis2=dict(title="Revenue/Visit (EGP)", overlaying="y", side="right") if "revenue_per_visit" in branch_ops.columns else {},
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+                        height=350, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"
+                    )
+                    google_theme(fig, height=350)
+                    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                    chart_end()
 
-            info_card_start("📋 Branch Scorecard Table")
-            st.dataframe(branch_ops.sort_values("total_visits", ascending=False),
-                         hide_index=True, use_container_width=True)
-            st.download_button("📊 Export Branch Scorecard", export_to_excel(branch_ops), "branch_scorecard.xlsx")
-            info_card_end()
+                # Radar chart
+                radar_metrics = []
+                if "total_visits" in branch_ops.columns:
+                    radar_metrics.append("total_visits")
+                if "revenue" in branch_ops.columns:
+                    radar_metrics.append("revenue")
+                if "unique_patients" in branch_ops.columns:
+                    radar_metrics.append("unique_patients")
+                if "peak_pct" in branch_ops.columns:
+                    radar_metrics.append("peak_pct")
+                if "weekend_pct" in branch_ops.columns:
+                    radar_metrics.append("weekend_pct")
+
+                if len(radar_metrics) >= 3:
+                    sec_title("🕸️ Branch Performance Radar")
+                    chart_start()
+                    radar_df = branch_ops.copy()
+                    for m in radar_metrics:
+                        max_val = radar_df[m].max()
+                        radar_df[m + "_norm"] = (radar_df[m] / max_val * 100).round(1) if max_val > 0 else 0
+
+                    fig = go.Figure()
+                    for _, row in radar_df.iterrows():
+                        fig.add_trace(go.Scatterpolar(
+                            r=[row[m + "_norm"] for m in radar_metrics] + [row[radar_metrics[0] + "_norm"]],
+                            theta=[m.replace("_", " ").title() for m in radar_metrics] + [radar_metrics[0].replace("_", " ").title()],
+                            fill="toself", name=row["Branch_Name"], opacity=0.3
+                        ))
+                    fig.update_layout(
+                        polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+                        showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.2),
+                        height=450, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"
+                    )
+                    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                    chart_end()
+
+                info_card_start("📋 Branch Scorecard Table")
+                st.dataframe(branch_ops.sort_values("total_visits", ascending=False) if "total_visits" in branch_ops.columns else branch_ops,
+                             hide_index=True, use_container_width=True)
+                st.download_button("📊 Export Branch Scorecard", export_to_excel(branch_ops), "branch_scorecard.xlsx")
+                info_card_end()
         else:
             st.info("Branch_Name column not available in visits data")
 
