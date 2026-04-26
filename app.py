@@ -373,11 +373,32 @@ conn = get_connection()
 
 @st.cache_data(ttl=3600)
 def load_patients():
-    return pd.read_sql("SELECT * FROM patients", conn)
+    df = pd.read_sql("SELECT * FROM patients", conn)
+    df = df.rename(columns={
+        "patient_id": "Patient_ID",
+        "age_group": "Age_Group",
+        "gender": "Gender",
+        "has_diabetes": "Has_Diabetes",
+        "has_hypertension": "Has_Hypertension",
+    })
+    return df
 
 @st.cache_data(ttl=3600)
 def load_visits():
     df = pd.read_sql("SELECT * FROM visits", conn)
+    df = df.rename(columns={
+        "visit_id": "Visit_ID",
+        "patient_id": "Patient_ID",
+        "branch_name_en": "Branch_Name",
+        "visit_date": "Visit_Date",
+        "visit_month_dt": "Visit_Month",
+        "visit_day": "Visit_Day",
+        "visit_hour": "Visit_Hour",
+        "is_weekend": "Is_Weekend",
+        "is_peak_hour": "Is_Peak_Hour",
+        "is_return_visit": "Is_Return_Visit",
+        "amount_paid": "Amount_Paid",
+    })
     df["Visit_Date"]  = pd.to_datetime(df["Visit_Date"],  errors="coerce")
     df["Visit_Month"] = pd.to_datetime(df["Visit_Month"], errors="coerce")
     return df
@@ -385,20 +406,29 @@ def load_visits():
 @st.cache_data(ttl=3600)
 def load_doctors():
     try:
-        return pd.read_sql("SELECT * FROM doctors", conn)
+        df = pd.read_sql("SELECT * FROM doctors", conn)
+        df = df.rename(columns={"specialty_en": "specialty"})
+        return df
     except Exception:
         return pd.DataFrame({"doctor_id": [], "actual_referrals": []})
 
 @st.cache_data(ttl=3600)
 def load_corporates():
     try:
-        return pd.read_sql("SELECT * FROM corporates", conn)
+        df = pd.read_sql("SELECT * FROM corporates", conn)
+        df = df.rename(columns={"company_name_en": "company_name"})
+        return df
     except Exception:
         return pd.DataFrame({"corporate_id": [], "actual_visits": []})
 
 @st.cache_data(ttl=3600)
 def load_branches():
-    return pd.read_sql("SELECT * FROM branches", conn)
+    df = pd.read_sql("SELECT * FROM branches", conn)
+    df = df.rename(columns={
+        "branch_name_en": "Branch_Name",
+        "city_en": "Branch_City",
+    })
+    return df
 
 @st.cache_data(ttl=3600)
 def load_monthly_trends():
@@ -1086,17 +1116,20 @@ elif page == "🏢  Corporate Search":
             st.dataframe(corp.T, use_container_width=True)
             info_card_end()
 
-    info_card_start("All Corporate Contracts")
-    display_corps = corporates_data
-    if len(corporates_data) > 0:
-        display_cols = ["corporate_id", "company_name", "industry", "employee_count",
-            "unique_employees", "total_revenue", "contract_health"]
-        display_cols = [c for c in display_cols if c in display_corps.columns]
-        display_corps = display_corps[display_cols].sort_values("total_revenue", ascending=False)
-        st.dataframe(display_corps, hide_index=True, use_container_width=True, height=400)
-        st.download_button("📊 Export Contracts", export_to_excel(display_corps), "corporate_contracts.xlsx")
-    else:
-        st.info("No corporate data available")
+    with tab_search:
+        info_card_start("All Corporate Contracts")
+        display_corps = corporates_data
+        if len(corporates_data) > 0:
+            display_cols = ["corporate_id", "company_name", "industry", "employee_count",
+                "unique_employees", "total_revenue", "contract_health"]
+            display_cols = [c for c in display_cols if c in display_corps.columns]
+            display_corps = display_corps[display_cols].sort_values("total_revenue", ascending=False)
+            st.dataframe(display_corps, hide_index=True, use_container_width=True, height=400)
+            st.download_button("📊 Export Contracts", export_to_excel(display_corps), "corporate_contracts.xlsx")
+        else:
+            st.info("No corporate data available")
+        info_card_end()
+
     with tab_gap:
         if not corporates_data.empty and "employee_count" in corporates_data.columns:
             gap_df = corporates_data.copy()
@@ -1139,8 +1172,6 @@ elif page == "🏢  Corporate Search":
             info_card_end()
         else:
             st.info("Employee count data required for utilization gap analysis")
-
-    info_card_end()
 
 
 
@@ -2349,13 +2380,17 @@ elif page == "📋 Reports":
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
-                    # Feature 10: PDF Report Export
-                    pdf_bytes = build_report_pdf(patients_data, visits_data, branches_data)
-                    st.download_button("📄 Download PDF Report", pdf_bytes,
-                                       format_report_filename("executive").replace(".xlsx", ".pdf"),
-                                       mime="application/pdf", use_container_width=True)
                 else:
                     st.warning("Please select at least one data source")
+
+    # ── Feature 10: PDF Report Export (admin-only) ──
+    if is_admin():
+        st.markdown('<hr style="margin:12px 0;border:none;border-top:1px solid #dadce0">',
+                    unsafe_allow_html=True)
+        pdf_bytes = build_report_pdf(patients_data, visits_data, branches_data)
+        st.download_button("📄 Download PDF Report", pdf_bytes,
+                           format_report_filename("executive").replace(".xlsx", ".pdf"),
+                           mime="application/pdf", use_container_width=True)
 
 # ============================================================
 # FOOTER
