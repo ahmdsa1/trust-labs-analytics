@@ -97,3 +97,15 @@ def get_alert_summary(patients_df: pd.DataFrame) -> dict:
         "high": high,
         "avg_risk": round(avg_risk, 1)
     }
+
+
+def get_at_risk_doctors(doctors_df, threshold=0.20):
+    """Flag doctors with low or zero referrals as at-risk."""
+    if doctors_df.empty or "actual_referrals" not in doctors_df.columns:
+        return doctors_df
+    median_refs = doctors_df["actual_referrals"].median()
+    doctors_df = doctors_df.copy()
+    doctors_df["status"] = doctors_df["actual_referrals"].apply(
+        lambda x: "Dormant" if x == 0 else ("At-Risk" if x < median_refs * (1 - threshold) else "Active")
+    )
+    return doctors_df

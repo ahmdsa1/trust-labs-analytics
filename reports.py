@@ -93,3 +93,42 @@ def format_report_filename(report_type: str) -> str:
     """Generate a standardized report filename."""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return f"trust_labs_{report_type}_{timestamp}.xlsx"
+
+
+def build_report_pdf(patients_df, visits_df, branches_df) -> bytes:
+    """Generate a simple PDF executive summary."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet
+    import io
+    from datetime import datetime
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4)
+    styles = getSampleStyleSheet()
+    story = []
+
+    story.append(Paragraph("Trust Labs Analytics — Executive Report", styles["Title"]))
+    story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
+    story.append(Spacer(1, 20))
+
+    summary_data = [
+        ["Metric", "Value"],
+        ["Total Patients", f"{len(patients_df):,}"],
+        ["Total Visits", f"{len(visits_df):,}"],
+        ["High Risk Patients", f"{int((patients_df['churn_risk_score'] >= 80).sum()) if 'churn_risk_score' in patients_df.columns else 'N/A'}"],
+        ["Gold Tier Patients", f"{int((patients_df['patient_tier'] == 'Gold').sum()) if 'patient_tier' in patients_df.columns else 'N/A'}"],
+        ["Total Branches", f"{len(branches_df):,}"],
+    ]
+    t = Table(summary_data, colWidths=[250, 200])
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#1a73e8")),
+        ("TEXTCOLOR",  (0,0), (-1,0), colors.white),
+        ("FONTNAME",   (0,0), (-1,0), "Helvetica-Bold"),
+        ("GRID",       (0,0), (-1,-1), 0.5, colors.grey),
+        ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#f8f9fa")]),
+    ]))
+    story.append(t)
+    doc.build(story)
+    return buf.getvalue()
