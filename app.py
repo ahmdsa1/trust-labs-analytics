@@ -23,7 +23,7 @@ from auth import (
     render_logout_button, is_admin, AUTH_ENABLED
 )
 from alerts import render_alert_banner, render_alert_table, get_alert_summary
-from reports import build_report_excel, build_custom_report, format_report_filename
+from reports import build_report_excel, build_custom_report, format_report_filename, build_report_pdf
 
 st.set_page_config(
     page_title="Trust Labs Analytics",
@@ -704,7 +704,7 @@ with st.sidebar:
 
     page = st.radio("nav",
         ["🏠  Home","🔍  Patient Search","👨‍⚕️  Doctor Search",
-         "🏢  Corporate Search","📊  Analytics","📥  Export","📋 Reports"],
+         "🏢  Corporate Search","👨‍⚕️  Doctors","📊  Analytics","📥  Export","📋 Reports"],
         label_visibility="collapsed")
 
     st.markdown('<hr style="margin:12px 0;border:none;border-top:1px solid #dadce0">',
@@ -722,12 +722,43 @@ letter-spacing:.8px;color:#5f6368;margin-bottom:10px;font-family:'Google Sans',s
         kpi_card("At Risk",f"{high_risk_count}","","down","⚠️","#ea4335")
     ],2), unsafe_allow_html=True)
 
+    # ── Feature 1: Global Date Range Filter ──
+    st.markdown("---")
+    st.markdown("**Date Range**")
+    min_date = visits_data["Visit_Date"].min().date() if not visits_data.empty and pd.notna(visits_data["Visit_Date"].min()) else datetime(2024,1,1).date()
+    max_date = visits_data["Visit_Date"].max().date() if not visits_data.empty and pd.notna(visits_data["Visit_Date"].max()) else datetime.today().date()
+    date_range = st.date_input(
+        "Filter all pages",
+        value=(min_date, max_date),
+        min_value=min_date,
+        max_value=max_date,
+        key="global_date_range"
+    )
+    if len(date_range) == 2:
+        st.session_state["date_start"] = pd.Timestamp(date_range[0])
+        st.session_state["date_end"] = pd.Timestamp(date_range[1])
+
     st.markdown('<hr style="margin:12px 0;border:none;border-top:1px solid #dadce0">',
                 unsafe_allow_html=True)
     
     # Phase 4: Logout button
     render_logout_button()
     
+    # ── Feature 2: Data Freshness Indicator ──
+    st.markdown('<hr style="margin:12px 0;border:none;border-top:1px solid #dadce0">',
+                unsafe_allow_html=True)
+    last_load = st.session_state.get("last_load_time", datetime.now())
+    minutes_ago = int((datetime.now() - last_load).total_seconds() / 60)
+    color = "#34a853" if minutes_ago < 30 else "#fbbc04" if minutes_ago < 60 else "#ea4335"
+    st.markdown(f"""
+<div style="font-size:0.7rem;color:{color};text-align:center;padding:4px 0">
+  ● Data refreshed {minutes_ago}m ago
+</div>""", unsafe_allow_html=True)
+    if st.button("↺ Refresh Data", use_container_width=True):
+        st.cache_data.clear()
+        st.session_state["last_load_time"] = datetime.now()
+        st.rerun()
+
     st.markdown('<hr style="margin:12px 0;border:none;border-top:1px solid #dadce0">',
                 unsafe_allow_html=True)
     st.markdown(f"""<div style="text-align:center;font-size:0.7rem;color:#9aa0a6">
@@ -743,6 +774,11 @@ if page == "🏠  Home":
 <h1>Analytics Dashboard</h1>
 <p>Professional healthcare intelligence platform</p>
 </div>""", unsafe_allow_html=True)
+
+    # Global date filter
+    date_start = st.session_state.get("date_start", visits_data["Visit_Date"].min())
+    date_end   = st.session_state.get("date_end",   visits_data["Visit_Date"].max())
+    filtered_visits = visits_data[(visits_data["Visit_Date"] >= date_start) & (visits_data["Visit_Date"] <= date_end)]
 
     avg_visits  = len(visits_data) / len(patients_data) if len(patients_data) > 0 else 0
     avg_loyalty = patients_data["loyalty_points"].mean() if len(patients_data) > 0 else 0
@@ -837,6 +873,11 @@ elif page == "🔍  Patient Search":
 <h1>Patient Search</h1>
 <p>Search and analyze patient records</p>
 </div>""", unsafe_allow_html=True)
+
+    # Global date filter
+    date_start = st.session_state.get("date_start", visits_data["Visit_Date"].min())
+    date_end   = st.session_state.get("date_end",   visits_data["Visit_Date"].max())
+    filtered_visits = visits_data[(visits_data["Visit_Date"] >= date_start) & (visits_data["Visit_Date"] <= date_end)]
 
     tab1, tab2 = st.tabs(["🆔 ID Lookup", "🔎 Advanced Search"])
 
@@ -942,6 +983,11 @@ elif page == "👨‍⚕️  Doctor Search":
 <p>Track and analyze doctor referral metrics</p>
 </div>""", unsafe_allow_html=True)
 
+    # Global date filter
+    date_start = st.session_state.get("date_start", visits_data["Visit_Date"].min())
+    date_end   = st.session_state.get("date_end",   visits_data["Visit_Date"].max())
+    filtered_visits = visits_data[(visits_data["Visit_Date"] >= date_start) & (visits_data["Visit_Date"] <= date_end)]
+
     c1, c2 = st.columns([3, 1])
     with c1:
         doctor_id = st.text_input("Doctor ID", placeholder="e.g., DOC00096")
@@ -999,15 +1045,23 @@ elif page == "🏢  Corporate Search":
 <p>Manage and analyze corporate partnerships</p>
 </div>""", unsafe_allow_html=True)
 
-    c1, c2 = st.columns([3, 1])
-    with c1:
-        corp_id = st.text_input("Corporate ID", placeholder="e.g., CORP023")
-    with c2:
-        st.markdown("<br>", unsafe_allow_html=True)
-        search_btn = st.button("🔍 Search", type="primary", use_container_width=True)
+    # Global date filter
+    date_start = st.session_state.get("date_start", visits_data["Visit_Date"].min())
+    date_end   = st.session_state.get("date_end",   visits_data["Visit_Date"].max())
+    filtered_visits = visits_data[(visits_data["Visit_Date"] >= date_start) & (visits_data["Visit_Date"] <= date_end)]
 
-    if search_btn and corp_id:
-        corp = search_corporate_by_id(corp_id)
+    tab_search, tab_gap = st.tabs(["🔍 Contract Search", "📊 Utilization Gap"])
+
+    with tab_search:
+        c1, c2 = st.columns([3, 1])
+        with c1:
+            corp_id = st.text_input("Corporate ID", placeholder="e.g., CORP023")
+        with c2:
+            st.markdown("<br>", unsafe_allow_html=True)
+            search_btn = st.button("🔍 Search", type="primary", use_container_width=True)
+
+        if search_btn and corp_id:
+            corp = search_corporate_by_id(corp_id)
         if corp is None or corp.empty:
             st.error(f"❌ Corporate ID '{corp_id}' not found!")
         else:
@@ -1042,7 +1096,188 @@ elif page == "🏢  Corporate Search":
         st.download_button("📊 Export Contracts", export_to_excel(display_corps), "corporate_contracts.xlsx")
     else:
         st.info("No corporate data available")
+    with tab_gap:
+        if not corporates_data.empty and "employee_count" in corporates_data.columns:
+            gap_df = corporates_data.copy()
+            gap_df["utilization_pct"] = (gap_df["unique_employees"] / gap_df["employee_count"] * 100).round(1)
+            gap_df["inactive_employees"] = gap_df["employee_count"] - gap_df["unique_employees"]
+            avg_revenue_per_employee = (gap_df["total_revenue"] / gap_df["unique_employees"].clip(lower=1)).mean()
+            gap_df["gap_egp"] = (gap_df["inactive_employees"] * avg_revenue_per_employee).round(0)
+            gap_df["health"] = gap_df["utilization_pct"].apply(
+                lambda x: "🟢 Excellent" if x >= 20 else ("🟡 Good" if x >= 10 else ("🟠 At-Risk" if x >= 5 else "🔴 Critical"))
+            )
+
+            total_gap = gap_df["gap_egp"].sum()
+            critical_count = len(gap_df[gap_df["utilization_pct"] < 5])
+
+            st.markdown(kpi_row([
+                kpi_card("Total Revenue Gap", f"{total_gap/1e6:.2f}M EGP", "untapped", "down", "💰", "#ea4335"),
+                kpi_card("Critical Contracts", str(critical_count), "< 5% utilization", "down", "🔴", "#ea4335"),
+                kpi_card("Avg Utilization", f"{gap_df['utilization_pct'].mean():.1f}%", "across contracts", "neutral", "📊", "#fbbc04"),
+                kpi_card("Total Inactive", f"{gap_df['inactive_employees'].sum():,}", "employees", "neutral", "👥", "#9334e6"),
+            ], 4), unsafe_allow_html=True)
+
+            sec_title("💰 Revenue Gap by Contract", "Sorted by untapped EGP opportunity")
+            chart_start()
+            top_gap = gap_df.nlargest(15, "gap_egp")
+            fig = px.bar(top_gap, x="gap_egp", y="company_name", orientation="h",
+                         color="utilization_pct", color_continuous_scale="RdYlGn",
+                         text=top_gap["gap_egp"].apply(lambda x: f"{x/1000:.0f}K EGP"))
+            fig.update_traces(textposition="outside")
+            google_theme(fig, height=400)
+            fig.update_layout(xaxis_title="Gap (EGP)", yaxis_title=None)
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            chart_end()
+
+            info_card_start("All Contracts — Utilization Overview")
+            display_cols = ["company_name", "employee_count", "unique_employees", "utilization_pct", "gap_egp", "health"]
+            display_cols = [c for c in display_cols if c in gap_df.columns]
+            st.dataframe(gap_df[display_cols].sort_values("gap_egp", ascending=False),
+                         hide_index=True, use_container_width=True)
+            st.download_button("📊 Export Gap Analysis", export_to_excel(gap_df[display_cols]), "utilization_gap.xlsx")
+            info_card_end()
+        else:
+            st.info("Employee count data required for utilization gap analysis")
+
     info_card_end()
+
+
+
+# ============================================================
+# PAGE: DOCTOR RANKING DASHBOARD
+# ============================================================
+
+elif page == "👨‍⚕️  Doctors":
+    st.markdown("""<div class="page-header">
+<h1>Doctor Ranking Dashboard</h1>
+<p>Performance, risk alerts, and branch flow analysis</p>
+</div>""", unsafe_allow_html=True)
+
+    # Global date filter
+    date_start = st.session_state.get("date_start", visits_data["Visit_Date"].min())
+    date_end   = st.session_state.get("date_end",   visits_data["Visit_Date"].max())
+    filtered_visits = visits_data[(visits_data["Visit_Date"] >= date_start) & (visits_data["Visit_Date"] <= date_end)]
+
+    from alerts import get_at_risk_doctors
+
+    tab_rank, tab_risk, tab_flow = st.tabs(["🏆 Ranking", "⚠️ At-Risk Alerts", "🏥 Branch Flow"])
+
+    # ── TAB 1: RANKING ──
+    with tab_rank:
+        if not doctors_data.empty and "actual_referrals" in doctors_data.columns:
+            docs_ranked = get_at_risk_doctors(doctors_data.copy())
+            docs_ranked = docs_ranked.sort_values("actual_referrals", ascending=False)
+
+            total_docs = len(docs_ranked)
+            active_count = len(docs_ranked[docs_ranked["status"] == "Active"])
+            atrisk_count = len(docs_ranked[docs_ranked["status"] == "At-Risk"])
+            dormant_count = len(docs_ranked[docs_ranked["status"] == "Dormant"])
+
+            st.markdown(kpi_row([
+                kpi_card("Total Doctors", str(total_docs), "", "neutral", "👨‍⚕️", "#1a73e8"),
+                kpi_card("Active", str(active_count), f"{active_count/total_docs*100:.0f}%" if total_docs > 0 else "0%", "up", "✅", "#34a853"),
+                kpi_card("At-Risk", str(atrisk_count), f"{atrisk_count/total_docs*100:.0f}%" if total_docs > 0 else "0%", "down", "⚠️", "#fbbc04"),
+                kpi_card("Dormant", str(dormant_count), f"{dormant_count/total_docs*100:.0f}%" if total_docs > 0 else "0%", "down", "❌", "#ea4335"),
+            ], 4), unsafe_allow_html=True)
+
+            sec_title("🏆 Top 15 Doctors by Referrals")
+            chart_start()
+            top15 = docs_ranked.head(15)
+            fig = px.bar(top15, x="actual_referrals", y="doctor_name", orientation="h",
+                         color="actual_referrals", color_continuous_scale="Blues",
+                         text="actual_referrals")
+            fig.update_traces(textposition="outside")
+            google_theme(fig, height=400)
+            fig.update_layout(xaxis_title="Referrals", yaxis_title=None, showlegend=False)
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            chart_end()
+
+            if "specialty" in docs_ranked.columns:
+                sec_title("🩺 Referrals by Specialty")
+                chart_start()
+                spec = docs_ranked.groupby("specialty")["actual_referrals"].sum().reset_index()
+                fig = px.pie(spec, values="actual_referrals", names="specialty", hole=0.6)
+                fig.update_traces(textposition="outside", textinfo="percent+label",
+                                  marker=dict(line=dict(color="#ffffff", width=3)))
+                fig.update_layout(height=300, paper_bgcolor="rgba(0,0,0,0)",
+                                  plot_bgcolor="rgba(0,0,0,0)", showlegend=False,
+                                  margin=dict(t=10, b=10, l=10, r=10))
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                chart_end()
+
+            info_card_start("All Doctors — Sortable Performance Table")
+            display_cols = ["doctor_name", "specialty", "actual_referrals",
+                            "unique_patients_referred", "total_revenue_generated", "status"]
+            display_cols = [c for c in display_cols if c in docs_ranked.columns]
+            def color_status(val):
+                if val == "Active": return "background-color:#e6f4ea;color:#137333"
+                if val == "At-Risk": return "background-color:#fef3e8;color:#b06000"
+                if val == "Dormant": return "background-color:#fce8e6;color:#c5221f"
+                return ""
+            try:
+                styled = docs_ranked[display_cols].style.map(color_status, subset=["status"])
+            except AttributeError:
+                styled = docs_ranked[display_cols].style.applymap(color_status, subset=["status"])
+            st.dataframe(styled, hide_index=True, use_container_width=True, height=400)
+            info_card_end()
+        else:
+            st.info("No doctor data available")
+
+    # ── TAB 2: AT-RISK ALERTS ──
+    with tab_risk:
+        if not doctors_data.empty and "actual_referrals" in doctors_data.columns:
+            docs_risk = get_at_risk_doctors(doctors_data.copy())
+            at_risk_df = docs_risk[docs_risk["status"].isin(["At-Risk", "Dormant"])]
+            if not at_risk_df.empty:
+                revenue_at_risk = at_risk_df["total_revenue_generated"].sum() if "total_revenue_generated" in at_risk_df.columns else 0
+                st.markdown(kpi_row([
+                    kpi_card("At-Risk Doctors", str(len(at_risk_df)), "", "down", "⚠️", "#ea4335"),
+                    kpi_card("Revenue at Risk", f"{revenue_at_risk/1000:.1f}K EGP", "potential loss", "down", "💰", "#ea4335"),
+                ], 2), unsafe_allow_html=True)
+
+                def color_risk_row(val):
+                    if val == "Dormant": return "background-color:#fce8e6;color:#c5221f;font-weight:600"
+                    if val == "At-Risk": return "background-color:#fef3e8;color:#b06000;font-weight:600"
+                    return ""
+                display_cols = ["doctor_name", "specialty", "actual_referrals",
+                                "unique_patients_referred", "total_revenue_generated", "status"]
+                display_cols = [c for c in display_cols if c in at_risk_df.columns]
+                try:
+                    styled = at_risk_df[display_cols].style.map(color_risk_row, subset=["status"])
+                except AttributeError:
+                    styled = at_risk_df[display_cols].style.applymap(color_risk_row, subset=["status"])
+                st.dataframe(styled, hide_index=True, use_container_width=True, height=400)
+                st.download_button("📊 Export At-Risk List", export_to_excel(at_risk_df[display_cols]),
+                                   "at_risk_doctors.xlsx", use_container_width=True)
+            else:
+                st.success("✅ No at-risk doctors detected!")
+        else:
+            st.info("No doctor data available")
+
+    # ── TAB 3: BRANCH FLOW ──
+    with tab_flow:
+        if "branch_id" in doctors_data.columns and not doctors_data.empty:
+            if "specialty" in doctors_data.columns:
+                flow = doctors_data.groupby(["branch_id", "specialty"])["actual_referrals"].sum().reset_index()
+                sec_title("🏥 Referral Flow by Branch & Specialty")
+                chart_start()
+                fig = px.bar(flow, x="actual_referrals", y="branch_id", orientation="h",
+                             color="specialty", barmode="stack")
+                google_theme(fig, height=400)
+                fig.update_layout(xaxis_title="Referrals", yaxis_title="Branch ID")
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+                chart_end()
+            else:
+                st.info("Specialty column required for branch flow analysis")
+        else:
+            info_card_start("🏥 Branch Flow Analysis")
+            st.markdown("""
+<div style="color:#5f6368; font-size:0.9rem;">
+<p><strong>Data Requirement:</strong> To enable Branch Flow visualization, the <code>doctors</code> table needs a <code>branch_id</code> column.</p>
+<p>This will allow grouping referrals by branch and specialty to identify which branches drive the most referrals per specialty.</p>
+</div>
+""", unsafe_allow_html=True)
+            info_card_end()
 
 # ============================================================
 # PAGE: ANALYTICS
@@ -1054,8 +1289,13 @@ elif page == "📊  Analytics":
 <p>Patients • Revenue • Inflation-adjusted CAGR • 3-month forecast</p>
 </div>""", unsafe_allow_html=True)
 
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-        ["📊 Overview", "⚠️ Churn", "💰 Revenue & Inflation (CAGR)", "🔮 Predictive Trends", "🏥 Clinical Insights", "🔍 Data Quality"])
+    # Global date filter
+    date_start = st.session_state.get("date_start", visits_data["Visit_Date"].min())
+    date_end   = st.session_state.get("date_end",   visits_data["Visit_Date"].max())
+    filtered_visits = visits_data[(visits_data["Visit_Date"] >= date_start) & (visits_data["Visit_Date"] <= date_end)]
+
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(
+        ["📊 Overview", "⚠️ Churn", "💰 Revenue & Inflation (CAGR)", "🔮 Predictive Trends", "🏥 Clinical Insights", "🔍 Data Quality", "🏥 Branch Ops", "💎 Revenue Mix"])
 
     # ── TAB 1: OVERVIEW ──
     with tab1:
@@ -1114,6 +1354,23 @@ elif page == "📊  Analytics":
             st.info("Age group data not available")
         chart_end()
 
+        # ── Feature 5: Day-of-Week × Hour Heatmap ──
+        sec_title("🕐 Visit Heatmap — Day × Hour", "When are patients most likely to visit?")
+        chart_start()
+        if "Visit_Day" in filtered_visits.columns and "Visit_Hour" in filtered_visits.columns:
+            day_order = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+            heat_df = filtered_visits.groupby(["Visit_Day", "Visit_Hour"]).size().reset_index(name="visits")
+            heat_pivot = heat_df.pivot(index="Visit_Day", columns="Visit_Hour", values="visits").fillna(0)
+            heat_pivot = heat_pivot.reindex([d for d in day_order if d in heat_pivot.index])
+            fig = px.imshow(heat_pivot, color_continuous_scale="Blues", aspect="auto",
+                            labels=dict(x="Hour of Day", y="Day of Week", color="Visits"))
+            fig.update_layout(height=300, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                              margin=dict(t=10, b=30, l=10, r=10))
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.info("Visit_Day and Visit_Hour columns required for heatmap")
+        chart_end()
+
         # ── MoM Growth Analysis ──
         sec_title("📊 Month-over-Month Growth",
                   "Track visit and patient growth rates month-over-month")
@@ -1143,6 +1400,20 @@ elif page == "📊  Analytics":
         else:
             st.info("Need at least 2 months of data for MoM analysis")
         chart_end()
+
+        # ── Feature 7: No-Show Cost Estimator ──
+        info_card_start("💸 No-Show Cost Estimator")
+        avg_revenue = visits_data["Amount_Paid"].mean() if "Amount_Paid" in visits_data.columns else 150
+        no_show_rate = st.slider("Estimated No-Show Rate (%)", 0, 30, 8, key="noshowslider")
+        total_bookings = len(filtered_visits)
+        estimated_noshows = int(total_bookings * no_show_rate / 100)
+        cost = estimated_noshows * avg_revenue
+        st.markdown(kpi_row([
+            kpi_card("Est. No-Shows", f"{estimated_noshows:,}", f"{no_show_rate}% rate", "down", "❌", "#ea4335"),
+            kpi_card("Revenue Lost", f"{cost/1000:.1f}K EGP", "per period", "down", "💸", "#ea4335"),
+            kpi_card("Recovery via SMS", f"{cost*0.35/1000:.1f}K EGP", "35% recovery est.", "up", "📱", "#34a853"),
+        ], 3), unsafe_allow_html=True)
+        info_card_end()
 
     # ── TAB 2: CHURN ──
     with tab2:
@@ -1237,6 +1508,24 @@ elif page == "📊  Analytics":
         else:
             st.info("No high-risk patients found")
         info_card_end()
+
+        # ── Feature 9: Patient Retention Cohort Table ──
+        sec_title("📅 Monthly Acquisition Cohorts", "% of patients still active N months after first visit")
+        chart_start()
+        if "Visit_Date" in visits_data.columns:
+            visits_data["cohort_month"] = visits_data.groupby("Patient_ID")["Visit_Date"].transform("min").dt.to_period("M")
+            visits_data["visit_period"] = visits_data["Visit_Date"].dt.to_period("M")
+            cohort_data = visits_data.groupby(["cohort_month","visit_period"])["Patient_ID"].nunique().reset_index()
+            cohort_data["period_number"] = (cohort_data["visit_period"] - cohort_data["cohort_month"]).apply(lambda x: x.n)
+            cohort_pivot = cohort_data.pivot(index="cohort_month", columns="period_number", values="Patient_ID")
+            cohort_pct = cohort_pivot.divide(cohort_pivot[0], axis=0) * 100
+            cohort_pct = cohort_pct.iloc[:, :12]
+            fig = px.imshow(cohort_pct.round(1), color_continuous_scale="Blues",
+                            labels=dict(x="Months Since First Visit", y="Cohort", color="Retention %"),
+                            text_auto=".0f", aspect="auto")
+            google_theme(fig, height=350)
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        chart_end()
 
         # ── ML Patient Segmentation ──
         sec_title("🧬 ML Patient Segments",
@@ -1569,6 +1858,134 @@ elif page == "📊  Analytics":
             else:
                 st.success("✅ No missing values in this table!")
 
+
+    # ── TAB 7: BRANCH OPERATIONAL SCORECARD (Feature 6) ──
+    with tab7:
+        sec_title("🏥 Branch Operational Scorecard", "Performance metrics across all branches")
+        if "Branch_Name" in filtered_visits.columns:
+            branch_ops = filtered_visits.groupby("Branch_Name").agg(
+                total_visits=("Visit_ID", "count"),
+                unique_patients=("Patient_ID", "nunique"),
+                avg_duration=("Visit_Duration", "mean"),
+                weekend_visits=("Is_Weekend", "sum"),
+                peak_visits=("Is_Peak_Hour", "sum"),
+                revenue=("Amount_Paid", "sum"),
+            ).reset_index()
+            branch_ops["weekend_pct"] = (branch_ops["weekend_visits"] / branch_ops["total_visits"] * 100).round(1)
+            branch_ops["peak_pct"] = (branch_ops["peak_visits"] / branch_ops["total_visits"] * 100).round(1)
+            branch_ops["revenue_per_visit"] = (branch_ops["revenue"] / branch_ops["total_visits"]).round(0)
+
+            total_branches = len(branch_ops)
+            top_branch_visits = branch_ops.loc[branch_ops["total_visits"].idxmax(), "Branch_Name"] if total_branches > 0 else "N/A"
+            top_branch_revenue = branch_ops.loc[branch_ops["revenue"].idxmax(), "Branch_Name"] if total_branches > 0 else "N/A"
+            avg_rev_visit = branch_ops["revenue_per_visit"].mean() if total_branches > 0 else 0
+
+            st.markdown(kpi_row([
+                kpi_card("Total Branches", str(total_branches), "", "neutral", "🏥", "#1a73e8"),
+                kpi_card("Top by Visits", top_branch_visits, "", "up", "📊", "#34a853"),
+                kpi_card("Top by Revenue", top_branch_revenue, "", "up", "💰", "#fbbc04"),
+                kpi_card("Avg Rev/Visit", f"{avg_rev_visit:,.0f} EGP", "", "neutral", "💵", "#9334e6"),
+            ], 4), unsafe_allow_html=True)
+
+            sec_title("📊 Visits vs Revenue per Visit by Branch")
+            chart_start()
+            fig = go.Figure()
+            fig.add_trace(go.Bar(x=branch_ops["Branch_Name"], y=branch_ops["total_visits"],
+                                 name="Total Visits", marker_color="#1a73e8", yaxis="y"))
+            fig.add_trace(go.Scatter(x=branch_ops["Branch_Name"], y=branch_ops["revenue_per_visit"],
+                                     name="Rev/Visit", mode="lines+markers", marker_color="#34a853", yaxis="y2"))
+            fig.update_layout(
+                yaxis=dict(title="Total Visits", side="left"),
+                yaxis2=dict(title="Revenue/Visit (EGP)", overlaying="y", side="right"),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02),
+                height=350, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"
+            )
+            google_theme(fig, height=350)
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            chart_end()
+
+            sec_title("🕸️ Branch Performance Radar")
+            chart_start()
+            metrics = ["total_visits", "revenue", "unique_patients", "peak_pct", "weekend_pct"]
+            radar_df = branch_ops.copy()
+            for m in metrics:
+                max_val = radar_df[m].max()
+                radar_df[m + "_norm"] = (radar_df[m] / max_val * 100).round(1) if max_val > 0 else 0
+
+            fig = go.Figure()
+            for _, row in radar_df.iterrows():
+                fig.add_trace(go.Scatterpolar(
+                    r=[row[m + "_norm"] for m in metrics] + [row[metrics[0] + "_norm"]],
+                    theta=[m.replace("_", " ").title() for m in metrics] + [metrics[0].replace("_", " ").title()],
+                    fill="toself", name=row["Branch_Name"], opacity=0.3
+                ))
+            fig.update_layout(
+                polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+                showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=-0.2),
+                height=450, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"
+            )
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            chart_end()
+
+            info_card_start("📋 Branch Scorecard Table")
+            st.dataframe(branch_ops.sort_values("total_visits", ascending=False),
+                         hide_index=True, use_container_width=True)
+            st.download_button("📊 Export Branch Scorecard", export_to_excel(branch_ops), "branch_scorecard.xlsx")
+            info_card_end()
+        else:
+            st.info("Branch_Name column not available in visits data")
+
+    # ── TAB 8: REVENUE MIX (Feature 8) ──
+    with tab8:
+        sec_title("💎 Revenue Per Patient Tier", "Which tier delivers the most value?")
+        if "Amount_Paid" in visits_data.columns and "patient_tier" in patients_data.columns:
+            merged = visits_data.merge(patients_data[["Patient_ID","patient_tier","churn_risk_category"]], on="Patient_ID", how="left")
+            tier_revenue = merged.groupby("patient_tier").agg(
+                total_revenue=("Amount_Paid","sum"),
+                visit_count=("Visit_ID","count"),
+                unique_patients=("Patient_ID","nunique")
+            ).reset_index()
+            tier_revenue["revenue_per_patient"] = (tier_revenue["total_revenue"] / tier_revenue["unique_patients"]).round(0)
+            tier_revenue["revenue_per_visit"] = (tier_revenue["total_revenue"] / tier_revenue["visit_count"]).round(0)
+            tier_revenue["revenue_share_pct"] = (tier_revenue["total_revenue"] / tier_revenue["total_revenue"].sum() * 100).round(1)
+
+            st.markdown(kpi_row([
+                kpi_card("Gold Rev/Patient", f"{tier_revenue[tier_revenue['patient_tier']=='Gold']['revenue_per_patient'].values[0]:,.0f}" if 'Gold' in tier_revenue['patient_tier'].values else "N/A", "", "neutral", "🥇", "#fbbc04"),
+                kpi_card("Silver Rev/Patient", f"{tier_revenue[tier_revenue['patient_tier']=='Silver']['revenue_per_patient'].values[0]:,.0f}" if 'Silver' in tier_revenue['patient_tier'].values else "N/A", "", "neutral", "🥈", "#9aa0a6"),
+                kpi_card("Bronze Rev/Patient", f"{tier_revenue[tier_revenue['patient_tier']=='Bronze']['revenue_per_patient'].values[0]:,.0f}" if 'Bronze' in tier_revenue['patient_tier'].values else "N/A", "", "neutral", "🥉", "#cd7f32"),
+            ], 3), unsafe_allow_html=True)
+
+            sec_title("📊 Revenue Share by Tier")
+            chart_start()
+            fig = px.bar(tier_revenue, x="patient_tier", y="total_revenue",
+                         color="patient_tier", text="revenue_share_pct",
+                         color_discrete_map={"Gold":"#fbbc04","Silver":"#9aa0a6","Bronze":"#cd7f32"})
+            fig.update_traces(texttemplate="%{text}%", textposition="outside")
+            google_theme(fig, height=300)
+            fig.update_layout(showlegend=False, xaxis_title=None, yaxis_title="Revenue (EGP)")
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            chart_end()
+
+            sec_title("💰 Patients vs Revenue by Tier")
+            chart_start()
+            fig = px.scatter(tier_revenue, x="unique_patients", y="total_revenue",
+                             color="patient_tier", size="revenue_per_patient",
+                             color_discrete_map={"Gold":"#fbbc04","Silver":"#9aa0a6","Bronze":"#cd7f32"},
+                             text="patient_tier")
+            fig.update_traces(textposition="top center")
+            google_theme(fig, height=300)
+            fig.update_layout(xaxis_title="Unique Patients", yaxis_title="Total Revenue (EGP)")
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            chart_end()
+
+            info_card_start("📋 Tier Metrics Table")
+            st.dataframe(tier_revenue.sort_values("total_revenue", ascending=False),
+                         hide_index=True, use_container_width=True)
+            st.download_button("📊 Export Tier Analysis", export_to_excel(tier_revenue), "tier_revenue.xlsx")
+            info_card_end()
+        else:
+            st.info("Amount_Paid or patient_tier columns not available")
+
 # ============================================================
 # PAGE: EXPORT
 # ============================================================
@@ -1578,6 +1995,11 @@ elif page == "📥  Export":
 <h1>Export Data</h1>
 <p>Download analytics data for external use</p>
 </div>""", unsafe_allow_html=True)
+
+    # Global date filter
+    date_start = st.session_state.get("date_start", visits_data["Visit_Date"].min())
+    date_end   = st.session_state.get("date_end",   visits_data["Visit_Date"].max())
+    filtered_visits = visits_data[(visits_data["Visit_Date"] >= date_start) & (visits_data["Visit_Date"] <= date_end)]
 
     table_options = {
         "Patients":           "patients",
@@ -1626,6 +2048,11 @@ elif page == "📋 Reports":
 <h1>Reports & Exports</h1>
 <p>Generate and download comprehensive analytics reports</p>
 </div>""", unsafe_allow_html=True)
+
+    # Global date filter
+    date_start = st.session_state.get("date_start", visits_data["Visit_Date"].min())
+    date_end   = st.session_state.get("date_end",   visits_data["Visit_Date"].max())
+    filtered_visits = visits_data[(visits_data["Visit_Date"] >= date_start) & (visits_data["Visit_Date"] <= date_end)]
     
     # Phase 4: Report generation UI
     tab1, tab2 = st.tabs(["📊 Full Report", "🛠️ Custom Report"])
@@ -1680,6 +2107,11 @@ elif page == "📋 Reports":
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
+                    # Feature 10: PDF Report Export
+                    pdf_bytes = build_report_pdf(patients_data, visits_data, branches_data)
+                    st.download_button("📄 Download PDF Report", pdf_bytes,
+                                       format_report_filename("executive").replace(".xlsx", ".pdf"),
+                                       mime="application/pdf", use_container_width=True)
                 else:
                     st.warning("Please select at least one data source")
 
