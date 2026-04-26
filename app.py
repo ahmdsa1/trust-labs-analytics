@@ -380,6 +380,10 @@ def load_patients():
         "gender": "Gender",
         "has_diabetes": "Has_Diabetes",
         "has_hypertension": "Has_Hypertension",
+        "patient_tier": "patient_tier",
+        "churn_risk_score": "churn_risk_score",
+        "loyalty_points": "loyalty_points",
+        "churn_risk_category": "churn_risk_category",
     })
     return df
 
@@ -398,6 +402,9 @@ def load_visits():
         "is_peak_hour": "Is_Peak_Hour",
         "is_return_visit": "Is_Return_Visit",
         "amount_paid": "Amount_Paid",
+        "patient_tier": "patient_tier",
+        "loyalty_points": "loyalty_points",
+        "churn_risk_category": "churn_risk_category",
     })
     df["Visit_Date"]  = pd.to_datetime(df["Visit_Date"],  errors="coerce")
     df["Visit_Month"] = pd.to_datetime(df["Visit_Month"], errors="coerce")
