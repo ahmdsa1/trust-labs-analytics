@@ -1122,20 +1122,19 @@ elif page == "  Corporate Search":
             info_card_start("Contract Details")
             st.dataframe(corp.T, use_container_width=True)
             info_card_end()
+    info_card_start("All Corporate Contracts")
+    display_corps = corporates_data
+    if len(corporates_data) > 0:
+        display_cols = ["corporate_id", "company_name", "industry", "employee_count",
+            "unique_employees", "total_revenue", "contract_health"]
+        display_cols = [c for c in display_cols if c in display_corps.columns]
+        display_corps = display_corps[display_cols].sort_values("total_revenue", ascending=False)
+        st.dataframe(display_corps, hide_index=True, use_container_width=True, height=400)
+        st.download_button(" Export Contracts", export_to_excel(display_corps), "corporate_contracts.xlsx")
+    else:
+        st.info("No corporate data available")
+    info_card_end()
 
-    with tab_search:
-        info_card_start("All Corporate Contracts")
-        display_corps = corporates_data
-        if len(corporates_data) > 0:
-            display_cols = ["corporate_id", "company_name", "industry", "employee_count",
-                "unique_employees", "total_revenue", "contract_health"]
-            display_cols = [c for c in display_cols if c in display_corps.columns]
-            display_corps = display_corps[display_cols].sort_values("total_revenue", ascending=False)
-            st.dataframe(display_corps, hide_index=True, use_container_width=True, height=400)
-            st.download_button(" Export Contracts", export_to_excel(display_corps), "corporate_contracts.xlsx")
-        else:
-            st.info("No corporate data available")
-        info_card_end()
 
     with tab_gap:
         if not corporates_data.empty and "employee_count" in corporates_data.columns:
@@ -2046,7 +2045,7 @@ elif page == "  Analytics":
                         ], 4), unsafe_allow_html=True)
                 # Only show charts if we have the necessary columns
                 if "total_visits" in branch_ops.columns:
-                    sec_title(" Visits vs Revenue per Visit by Branch")
+                    sec_title("Visits vs Revenue per Visit by Branch")
                     chart_start()
                     fig = go.Figure()
                     fig.add_trace(go.Bar(x=branch_ops["Branch_Name"], y=branch_ops["total_visits"],
@@ -2100,13 +2099,15 @@ elif page == "  Analytics":
                     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
                     chart_end()
 
-                info_card_start(" Branch Scorecard Table")
+                info_card_start("Branch Scorecard Table")
                 st.dataframe(branch_ops.sort_values("total_visits", ascending=False) if "total_visits" in branch_ops.columns else branch_ops,
                              hide_index=True, use_container_width=True)
                 st.download_button(" Export Branch Scorecard", export_to_excel(branch_ops), "branch_scorecard.xlsx")
                 info_card_end()
-        else:
-            st.info("Branch_Name column not available in visits data")
+            else:
+                st.info("Branch_Name column not available in visits data")
+        except Exception as e:
+            st.error(f"Branch analysis error: {e}")
 
     # ── TAB 8: REVENUE MIX (Feature 8) ──
     with tab8:
@@ -2167,10 +2168,6 @@ elif page == "  Analytics":
                 st.error(f"Error processing tier data: {str(e)}")
         else:
             st.warning("⚠️ Amount_Paid or patient_tier columns not available in visit data")
-            except Exception as e:
-                st.error(f"Error processing tier data: {str(e)}")
-        else:
-            st.warning("Amount_Paid or patient_tier columns not available in visit data. Running database rebuild...")
 
     # ── TAB 9: BRANCH VS BRANCH COMPARISON ──
     with tab9:
